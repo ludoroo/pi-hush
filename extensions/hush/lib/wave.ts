@@ -3,13 +3,13 @@ import {
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationFrameContext,
-} from "./working-animation.ts";
+} from "./animation.ts";
 
-export const HUSH_WORKING_WAVE_TICK_MS = 100;
-export const HUSH_WORKING_WAVE_MAX_HEIGHT = 1;
-export const HUSH_WORKING_WAVE_WIDTH = 12;
-// One wavelength spans 24 Braille dot columns, or 12 terminal cells.
-export const HUSH_WORKING_WAVE_WAVELENGTH = 24;
+export const HUSH_WAVE_TICK_MS = 100;
+export const HUSH_WAVE_MAX_HEIGHT = 1;
+export const HUSH_WAVE_WIDTH = 30;
+// One wavelength spans 12 Braille dot columns, or 6 terminal cells.
+export const HUSH_WAVE_WAVELENGTH = 12;
 
 const CENTER_ROW = 1.5;
 const AMPLITUDE = 1.15;
@@ -18,8 +18,11 @@ const LEFT_DOT_BITS = [0x01, 0x02, 0x04, 0x40] as const;
 const RIGHT_DOT_BITS = [0x08, 0x10, 0x20, 0x80] as const;
 
 function sampleRow(sample: number, phase: number): number {
-  const radians =
-    ((sample - phase) * 2 * Math.PI) / HUSH_WORKING_WAVE_WAVELENGTH;
+  const cycleSample = positiveModulo(
+    sample - phase,
+    HUSH_WAVE_WAVELENGTH,
+  );
+  const radians = (cycleSample * 2 * Math.PI) / HUSH_WAVE_WAVELENGTH;
   return Math.max(
     0,
     Math.min(3, Math.round(CENTER_ROW + AMPLITUDE * Math.sin(radians))),
@@ -27,10 +30,7 @@ function sampleRow(sample: number, phase: number): number {
 }
 
 /** Render a compact Braille waveform. Increasing phase moves it to the right. */
-export function renderHushWorkingWaveCells(
-  width: number,
-  phase: number,
-): string {
+export function renderHushWaveCells(width: number, phase: number): string {
   if (width <= 0) return "";
 
   let frame = "";
@@ -55,20 +55,21 @@ function waveCellColor(
   // stationary rainbow. Gold occupies only the narrow crest-sized band.
   const phase = positiveModulo(
     column * 2 - context.frame,
-    HUSH_WORKING_WAVE_WAVELENGTH,
+    HUSH_WAVE_WAVELENGTH,
   );
-  if (phase >= 5 && phase < 8) return "highlight";
-  if (phase < 5 || phase >= 20) return "accent";
-  if (phase < 14) return "secondary";
+  const cycle = phase / HUSH_WAVE_WAVELENGTH;
+  if (cycle >= 0.21 && cycle < 0.34) return "highlight";
+  if (cycle < 0.21 || cycle >= 0.84) return "accent";
+  if (cycle < 0.59) return "secondary";
   return "tertiary";
 }
 
-export function renderHushWorkingWave(
+export function renderHushWave(
   context: HushAnimationFrameContext,
 ): HushAnimationFrame {
   return {
     segments: Array.from(
-      renderHushWorkingWaveCells(context.width, context.frame),
+      renderHushWaveCells(context.width, context.frame),
       (glyph, column) => ({
         text: glyph,
         color: waveCellColor(column, context),
@@ -77,14 +78,14 @@ export function renderHushWorkingWave(
   };
 }
 
-export const HUSH_WORKING_WAVE_ANIMATION = defineHushWorkingAnimation({
+export const HUSH_WAVE_ANIMATION = defineHushWorkingAnimation({
   kind: "procedural",
   id: "wave",
   label: "Waveform",
   description: "A compact multi-tone Braille waveform from the active theme",
-  maxHeight: HUSH_WORKING_WAVE_MAX_HEIGHT,
+  maxHeight: HUSH_WAVE_MAX_HEIGHT,
   placement: "aboveEditor",
-  intervalMs: HUSH_WORKING_WAVE_TICK_MS,
-  width: HUSH_WORKING_WAVE_WIDTH,
-  renderFrame: renderHushWorkingWave,
+  intervalMs: HUSH_WAVE_TICK_MS,
+  width: HUSH_WAVE_WIDTH,
+  renderFrame: renderHushWave,
 });

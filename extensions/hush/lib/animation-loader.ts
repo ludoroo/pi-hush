@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { HushWorkingAnimation } from "./working-animation.ts";
+import type { HushWorkingAnimation } from "./animation.ts";
 
 const HUSH_ANIMATION_EXTENSIONS = new Set([".ts", ".mts", ".js", ".mjs"]);
 const HUSH_ANIMATION_INDEX_FILES = new Set([

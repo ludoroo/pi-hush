@@ -39,8 +39,47 @@ export type HushPresentationState = {
   /** When hush is on, whether thinking / CoT blocks are shown. */
   thinking: boolean;
   workingAnimationId: string;
+  /** Whether concise live activity text is configured beside the animation. */
+  activityTextEnabled: boolean;
+  /** Current visible activity text, when Hush and the option are active. */
+  activityText?: string;
   stockExportRendering: boolean;
 };
+
+function sameHushPresentationState(
+  left: HushPresentationState,
+  right: HushPresentationState,
+): boolean {
+  return (
+    left.active === right.active &&
+    left.thinking === right.thinking &&
+    left.workingAnimationId === right.workingAnimationId &&
+    left.activityTextEnabled === right.activityTextEnabled &&
+    left.activityText === right.activityText &&
+    left.stockExportRendering === right.stockExportRendering
+  );
+}
+
+/** Suppress identical cross-extension state events, including token deltas. */
+export class HushPresentationPublisher {
+  #lastState: HushPresentationState | undefined;
+
+  reset(): void {
+    this.#lastState = undefined;
+  }
+
+  publish(
+    state: HushPresentationState,
+    emit: (state: HushPresentationState) => void,
+  ): boolean {
+    if (this.#lastState && sameHushPresentationState(this.#lastState, state)) {
+      return false;
+    }
+    this.#lastState = { ...state };
+    emit(state);
+    return true;
+  }
+}
 
 export type HushPreference = {
   active: boolean;

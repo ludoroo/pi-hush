@@ -5,15 +5,21 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   truncateToWidth,
+  visibleWidth,
   type Component,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { sanitizeHushActivityText } from "./activity.ts";
 
-export const HUSH_ANIMATION_WIDGET_KEY = "pi-hush:working-animation";
+export const HUSH_ANIMATION_WIDGET_KEY = "pi-hush:animation";
 export const HUSH_ANIMATION_DISCOVERY_EVENT = "pi-hush:discover-animations";
 export const HUSH_ANIMATION_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 export const HUSH_ANIMATION_MAX_HEIGHT = 10;
-export const HUSH_LOADER_INDENT = 2;
+/** Playback never consumes more than three terminal rows, even for taller assets. */
+export const HUSH_ANIMATION_ROW_BUDGET = 3;
+/** Align Hush output with Pi's conversation text using a compact inset. */
+export const HUSH_LOADER_INDENT = 1;
+const HUSH_ACTIVITY_RESERVE_WIDTH = 24;
 
 export type HushAnimationPalette = {
   /** Pi's primary accent token. */
@@ -41,8 +47,16 @@ export type HushAnimationFrameContext = {
   readonly frame: number;
   /** Resolved content width after proportional sizing and bounds. */
   readonly width: number;
-  /** Complete widget width before Hush applies its standard indent. */
+  /** Complete widget width. */
   readonly viewportWidth: number;
+};
+
+/** Host-supplied render area and playback position; resizes never reset time. */
+export type HushAnimationRenderContext = HushAnimationFrameContext & {
+  /** Allocated rows, bounded by the terminal budget and the animation's maxHeight. */
+  readonly height: number;
+  /** Active playback time sampled on timer ticks, excluding unmounted time. */
+  readonly elapsedMs: number;
 };
 
 export type HushAnimationColor = keyof HushAnimationPalette;
@@ -53,12 +67,17 @@ export type HushAnimationFrameSegment = {
   readonly color?: HushAnimationColor;
 };
 
-export type HushAnimationFrame =
+export type HushAnimationRow =
   | HushAnimationFrameSegment
   | {
-      /** Segments allow multiple theme colours within one frame. */
+      /** Segments allow multiple theme colours within one row. */
       readonly segments: readonly HushAnimationFrameSegment[];
     };
+
+/** Existing single-row frames remain valid shorthand. Empty rows retain position. */
+export type HushAnimationFrame =
+  | HushAnimationRow
+  | { readonly rows: readonly HushAnimationRow[] };
 
 type HushAnimationBase = {
   /** Stable preference and command identifier. */
@@ -68,7 +87,10 @@ type HushAnimationBase = {
   readonly intervalMs: number;
   /** Fixed columns, or a viewport ratio with optional column bounds. */
   readonly width: HushAnimationWidth;
+  /** Preferred canvas height; playback clamps this to the host's strict row budget. */
   readonly maxHeight: number;
+  /** Below this allocated width, request a single-row rendition instead. */
+  readonly minWidthForMultiRow?: number;
   readonly placement?: WidgetPlacement;
 };
 
@@ -83,7 +105,7 @@ export type HushFrameAnimation = HushAnimationBase & {
 export type HushProceduralAnimation = HushAnimationBase & {
   readonly kind?: "procedural";
   readonly frames?: never;
-  renderFrame(context: HushAnimationFrameContext): HushAnimationFrame;
+  renderFrame(context: HushAnimationRenderContext): HushAnimationFrame;
 };
 
 /** A temporary working animation rendered through Pi's widget API. */
@@ -105,7 +127,7 @@ export function defineHushWorkingAnimation<T extends HushWorkingAnimation>(
 }
 
 /** Registry boundary: adding an animation does not require changing the host. */
-export class HushWorkingAnimationRegistry {
+export class HushAnimationRegistry {
   readonly #animations = new Map<string, HushWorkingAnimation>();
 
   constructor(animations: Iterable<HushWorkingAnimation> = []) {
@@ -135,6 +157,9 @@ export class HushWorkingAnimationRegistry {
       throw new Error(`Invalid interval for Hush animation: ${animation.id}`);
     }
     validateHushAnimationWidth(animation.width, animation.id);
+    if (!positiveColumns(animation.minWidthForMultiRow)) {
+      throw new Error(`Invalid multi-row minimum width: ${animation.id}`);
+    }
     if (
       !Number.isInteger(animation.maxHeight) ||
       animation.maxHeight <= 0 ||
@@ -173,20 +198,29 @@ function validFrameSegment(value: unknown): value is HushAnimationFrameSegment {
   const segment = value as Partial<HushAnimationFrameSegment>;
   return (
     typeof segment.text === "string" &&
-    segment.text.length > 0 &&
-    !/[\0\r\n]/.test(segment.text) &&
+    // Frames are semantic text, never terminal commands or styled ANSI strings.
+    !/[\u0000-\u001f\u007f-\u009f\u061c\u2028-\u202e\u2066-\u2069]/.test(segment.text) &&
     (segment.color === undefined || HUSH_ANIMATION_COLORS.has(segment.color))
   );
 }
 
-function validHushAnimationFrame(value: unknown): value is HushAnimationFrame {
-  if (!value || typeof value !== "object") return false;
+function validHushAnimationRow(value: unknown): value is HushAnimationRow {
+  if (!value || typeof value !== "object" || "rows" in value) return false;
   if (!("segments" in value)) return validFrameSegment(value);
-  const segments = value.segments;
+  return Array.isArray(value.segments) && value.segments.every(validFrameSegment);
+}
+
+function validHushAnimationFrame(
+  value: unknown,
+  maxHeight: number,
+): value is HushAnimationFrame {
+  if (!value || typeof value !== "object") return false;
+  if (!("rows" in value)) return validHushAnimationRow(value);
   return (
-    Array.isArray(segments) &&
-    segments.length > 0 &&
-    segments.every(validFrameSegment)
+    Array.isArray(value.rows) &&
+    value.rows.length > 0 &&
+    value.rows.length <= maxHeight &&
+    value.rows.every(validHushAnimationRow)
   );
 }
 
@@ -197,8 +231,9 @@ function validateHushAnimationRenderer(animation: HushWorkingAnimation): void {
       typeof animation.renderFrame === "function" ||
       !Array.isArray(animation.frames) ||
       animation.frames.length === 0 ||
-      animation.maxHeight !== 1 ||
-      !animation.frames.every(validHushAnimationFrame)
+      !animation.frames.every((frame) =>
+        validHushAnimationFrame(frame, animation.maxHeight),
+      )
     ) {
       throw new Error(`Invalid frames for Hush animation: ${animationId}`);
     }
@@ -241,7 +276,7 @@ function validateHushAnimationWidth(
   }
 }
 
-/** Resolve a fixed or proportional width against space left after indentation. */
+/** Resolve a fixed or proportional width against the available columns. */
 export function resolveHushAnimationWidth(
   width: HushAnimationWidth,
   availableColumns: number,
@@ -259,39 +294,101 @@ export function resolveHushAnimationWidth(
   return Math.min(resolved, available);
 }
 
+/** Budget at most 1/8 of terminal rows (at least one), capped at three. */
+export function resolveHushAnimationHeight(
+  animation: Pick<HushWorkingAnimation, "maxHeight" | "minWidthForMultiRow">,
+  availableWidth: number,
+  terminalRows: number,
+): number {
+  if (availableWidth <= 0) return 1;
+  if (availableWidth < (animation.minWidthForMultiRow ?? 1)) return 1;
+  const rows = Number.isFinite(terminalRows) ? terminalRows : 0;
+  const budget = Math.max(1, Math.floor(rows / 8));
+  return Math.min(animation.maxHeight, HUSH_ANIMATION_ROW_BUDGET, budget);
+}
+
 /** Select or compute one semantic frame, then paint it with the active theme. */
 export function renderHushAnimation(
   animation: HushWorkingAnimation,
-  context: HushAnimationFrameContext,
+  context: HushAnimationFrameContext & Partial<Pick<HushAnimationRenderContext, "height" | "elapsedMs">>,
   palette: HushAnimationPalette,
 ): readonly string[] {
+  // Legacy callers can still provide the original frame/width/viewport context.
+  const renderContext: HushAnimationRenderContext = {
+    ...context,
+    height: context.height ?? Math.min(animation.maxHeight, HUSH_ANIMATION_ROW_BUDGET),
+    elapsedMs: context.elapsedMs ?? context.frame * animation.intervalMs,
+  };
   const frame: unknown =
     animation.kind === "frames"
       ? animation.frames[context.frame % animation.frames.length]
-      : animation.renderFrame(context);
-  if (!validHushAnimationFrame(frame)) {
+      : animation.renderFrame(renderContext);
+  if (!validHushAnimationFrame(frame, animation.maxHeight)) {
     throw new Error(
-      "renderFrame must return a frame containing valid text and colour roles",
+      "renderFrame must return a frame containing valid rows, text and colour roles",
     );
   }
-  const segments = "segments" in frame ? frame.segments : [frame];
-  return [
-    segments
-      .map(({ text, color = "accent" }) => palette[color](text))
-      .join(""),
-  ];
+  const rows = "rows" in frame ? frame.rows : [frame];
+  return rows.map((row) => {
+    const segments = "segments" in row ? row.segments : [row];
+    return segments.map(({ text, color = "accent" }) => palette[color](text)).join("");
+  });
 }
 
-/** Enforce the widget contract: at most maxHeight rows, none wider than width. */
+/** Pad to the allocated canvas so frame content cannot change widget height. */
 export function normalizeHushWidgetFrame(
   lines: readonly string[],
   width: number,
-  maxHeight: number,
+  height: number,
 ): string[] {
   const safeWidth = Math.max(0, Math.floor(width));
-  return lines
-    .slice(0, Math.max(0, maxHeight))
-    .map((line) => truncateToWidth(line, safeWidth, ""));
+  const safeHeight = Math.max(0, Math.floor(height));
+  return Array.from({ length: safeHeight }, (_, row) => {
+    const line = truncateToWidth(lines[row] ?? "", safeWidth, "");
+    return line + " ".repeat(Math.max(0, safeWidth - visibleWidth(line)));
+  });
+}
+
+/** Compose one non-wrapping row, giving activity text a bounded priority. */
+export function composeHushWorkingLine(options: {
+  animationLine: string;
+  animationWidth: number;
+  viewportWidth: number;
+  activityText?: string;
+  styleActivity?: (text: string) => string;
+}): string {
+  const viewportWidth = Math.max(0, Math.floor(options.viewportWidth));
+  if (viewportWidth === 0) return "";
+  const animationWidth = Math.min(
+    Math.max(0, Math.floor(options.animationWidth)),
+    viewportWidth,
+  );
+  const animationLine = truncateToWidth(
+    options.animationLine,
+    animationWidth,
+    "",
+  );
+  const activityText = sanitizeHushActivityText(options.activityText ?? "");
+  if (!activityText) return animationLine;
+
+  const gapWidth = animationWidth > 0 ? 1 : 0;
+  const activityWidth = Math.min(
+    HUSH_ACTIVITY_RESERVE_WIDTH - gapWidth,
+    viewportWidth - animationWidth - gapWidth,
+  );
+  if (activityWidth <= 0) return animationLine;
+  const animationPadding = " ".repeat(
+    Math.max(0, animationWidth - visibleWidth(animationLine)),
+  );
+  const activity = truncateToWidth(
+    activityText,
+    activityWidth,
+    "…",
+  ).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+  if (visibleWidth(activity) === 0) return animationLine;
+  const styledActivity = (options.styleActivity ?? ((text) => text))(activity);
+  const gap = gapWidth === 0 ? "" : " ";
+  return `${animationLine}${animationPadding}${gap}${styledActivity}`;
 }
 
 function animationPalette(theme: Theme): HushAnimationPalette {
@@ -307,6 +404,8 @@ function animationPalette(theme: Theme): HushAnimationPalette {
 type HushWidgetAnimationState = {
   frame: number;
   lastRenderedFrame: number;
+  elapsedMs: number;
+  lastRenderedElapsedMs: number;
 };
 
 class HushAnimationWidget implements Component {
@@ -315,6 +414,8 @@ class HushAnimationWidget implements Component {
   readonly #animation: HushWorkingAnimation;
   readonly #state: HushWidgetAnimationState;
   readonly #onRenderError: (error: unknown) => void;
+  #activityText: string | undefined;
+  #activityTextEnabled: boolean;
   #disposed = false;
   #renderErrorReported = false;
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -328,16 +429,23 @@ class HushAnimationWidget implements Component {
     theme: Theme,
     animation: HushWorkingAnimation,
     state: HushWidgetAnimationState,
+    activityTextEnabled: boolean,
+    activityText: string | undefined,
     onRenderError: (error: unknown) => void,
   ) {
     this.#tui = tui;
     this.#theme = theme;
     this.#animation = animation;
     this.#state = state;
+    this.#activityTextEnabled = activityTextEnabled;
+    this.#activityText = activityText;
     this.#onRenderError = onRenderError;
+    const startedAt = performance.now();
+    const resumedElapsedMs = this.#state.elapsedMs;
     this.#timer = setInterval(() => {
       if (this.#disposed) return;
-      this.#state.frame += 1;
+      this.#state.elapsedMs = resumedElapsedMs + Math.max(0, performance.now() - startedAt);
+      this.#state.frame = Math.floor(this.#state.elapsedMs / this.#animation.intervalMs);
       this.#tui.requestRender();
     }, this.#animation.intervalMs);
     this.#timer.unref?.();
@@ -348,17 +456,46 @@ class HushAnimationWidget implements Component {
     try {
       const viewportWidth = Math.max(0, Math.floor(width));
       if (viewportWidth === 0) return [];
-      const indent = Math.min(HUSH_LOADER_INDENT, viewportWidth - 1);
+      const indent = Math.min(
+        HUSH_LOADER_INDENT,
+        Math.max(0, viewportWidth - 1),
+      );
+      const lineWidth = viewportWidth - indent;
+      const prefix = " ".repeat(indent);
+      const activityReserve = this.#activityTextEnabled
+        ? Math.min(HUSH_ACTIVITY_RESERVE_WIDTH, lineWidth)
+        : 0;
       const contentWidth = resolveHushAnimationWidth(
         this.#animation.width,
-        viewportWidth - indent,
+        lineWidth - activityReserve,
       );
-      if (contentWidth === 0) return [];
+      if (contentWidth === 0) {
+        if (!this.#activityTextEnabled) return [];
+        this.#state.lastRenderedFrame = this.#state.frame;
+        this.#state.lastRenderedElapsedMs = this.#state.elapsedMs;
+        return [
+          prefix +
+            composeHushWorkingLine({
+              animationLine: "",
+              animationWidth: 0,
+              viewportWidth: lineWidth,
+              activityText: this.#activityText,
+              styleActivity: (text) => this.#theme.fg("muted", text),
+            }),
+        ];
+      }
+      const contentHeight = resolveHushAnimationHeight(
+        this.#animation,
+        contentWidth,
+        this.#tui.terminal.rows,
+      );
       const lines = renderHushAnimation(
         this.#animation,
         {
           frame: this.#state.frame,
+          elapsedMs: this.#state.elapsedMs,
           width: contentWidth,
+          height: contentHeight,
           viewportWidth,
         },
         animationPalette(this.#theme),
@@ -374,13 +511,25 @@ class HushAnimationWidget implements Component {
         );
       }
       this.#state.lastRenderedFrame = this.#state.frame;
+      this.#state.lastRenderedElapsedMs = this.#state.elapsedMs;
       const normalized = normalizeHushWidgetFrame(
         lines,
         contentWidth,
-        this.#animation.maxHeight,
+        contentHeight,
       );
-      const prefix = " ".repeat(indent);
-      return normalized.map((line) => `${prefix}${line}`);
+      return normalized.map(
+        (line, index) =>
+          prefix +
+          composeHushWorkingLine({
+            animationLine: line,
+            animationWidth: contentWidth,
+            viewportWidth: lineWidth,
+            activityText: index === Math.floor(contentHeight / 2)
+              ? this.#activityText
+              : undefined,
+            styleActivity: (text) => this.#theme.fg("muted", text),
+          }),
+      );
     } catch (error) {
       if (!this.#renderErrorReported) {
         this.#renderErrorReported = true;
@@ -391,6 +540,13 @@ class HushAnimationWidget implements Component {
     }
   }
 
+  setActivityText(text: string | undefined, enabled: boolean): void {
+    if (this.#activityText === text && this.#activityTextEnabled === enabled) return;
+    this.#activityText = text;
+    this.#activityTextEnabled = enabled;
+    this.#tui.requestRender();
+  }
+
   invalidate(): void {
     // Theme is read for every frame, so there is no themed render cache to clear.
   }
@@ -399,26 +555,29 @@ class HushAnimationWidget implements Component {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#state.frame = this.#state.lastRenderedFrame;
+    this.#state.elapsedMs = this.#state.lastRenderedElapsedMs;
     if (this.#timer !== undefined) clearInterval(this.#timer);
     this.#timer = undefined;
   }
 }
 
-/** Owns the temporary widget and all working-animation lifecycle. */
-export class HushWorkingAnimationHost {
-  readonly #registry: HushWorkingAnimationRegistry;
+/** Owns the temporary widget and animation lifecycle. */
+export class HushAnimationHost {
+  readonly #registry: HushAnimationRegistry;
   readonly #defaultAnimationId: string;
   #animationId: string;
   #enabled = false;
   #working = false;
   #widgetsEnabled = true;
+  #activityTextEnabled = false;
+  #activityText: string | undefined;
   #ui: ExtensionUIContext | undefined;
   #widget: HushAnimationWidget | undefined;
   readonly #widgetStates = new Map<string, HushWidgetAnimationState>();
   readonly #failedAnimationIds = new Set<string>();
 
   constructor(
-    registry: HushWorkingAnimationRegistry,
+    registry: HushAnimationRegistry,
     defaultAnimationId: string,
   ) {
     if (!registry.get(defaultAnimationId)) {
@@ -444,24 +603,33 @@ export class HushWorkingAnimationHost {
       enabled: boolean;
       animationId: string;
       widgetsEnabled?: boolean;
+      activityTextEnabled?: boolean;
     },
   ): void {
     const animationId = this.#registry.get(options.animationId)
       ? options.animationId
       : this.#defaultAnimationId;
     const widgetsEnabled = options.widgetsEnabled ?? true;
-    if (
+    const activityTextEnabled = options.activityTextEnabled ?? false;
+    const basePresentationUnchanged =
       this.#ui === ui &&
       this.#enabled === options.enabled &&
       this.#animationId === animationId &&
-      this.#widgetsEnabled === widgetsEnabled
-    ) {
+      this.#widgetsEnabled === widgetsEnabled;
+    if (basePresentationUnchanged) {
+      if (this.#activityTextEnabled === activityTextEnabled) return;
+      this.#activityTextEnabled = activityTextEnabled;
+      this.#widget?.setActivityText(
+        activityTextEnabled ? this.#activityText : undefined,
+        activityTextEnabled,
+      );
       return;
     }
 
     this.#ui = ui;
     this.#enabled = options.enabled;
     this.#widgetsEnabled = widgetsEnabled;
+    this.#activityTextEnabled = activityTextEnabled;
     this.#animationId = animationId;
     this.#renderPresentation();
   }
@@ -474,6 +642,14 @@ export class HushWorkingAnimationHost {
     if (ui && this.#enabled && this.#widgetsEnabled && animation) {
       this.#syncWidget(ui, animation);
     }
+  }
+
+  setActivityText(text: string | undefined): void {
+    this.#activityText = text;
+    this.#widget?.setActivityText(
+      this.#activityTextEnabled ? this.#activityText : undefined,
+      this.#activityTextEnabled,
+    );
   }
 
   dispose(options: { restorePi?: boolean } = {}): void {
@@ -527,6 +703,8 @@ export class HushWorkingAnimationHost {
     const state = this.#widgetStates.get(animation.id) ?? {
       frame: 0,
       lastRenderedFrame: 0,
+      elapsedMs: 0,
+      lastRenderedElapsedMs: 0,
     };
     this.#widgetStates.set(animation.id, state);
     ui.setWorkingVisible(false);
@@ -538,6 +716,8 @@ export class HushWorkingAnimationHost {
           theme,
           animation,
           state,
+          this.#activityTextEnabled,
+          this.#activityTextEnabled ? this.#activityText : undefined,
           (error) => this.#handleRenderError(animation, error),
         );
         this.#widget = widget;

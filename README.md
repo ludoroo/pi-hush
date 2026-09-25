@@ -12,7 +12,7 @@ Hush is **on by default**:
 | --- | --- |
 | Genuine user prompts | Thinking / CoT blocks (unless `/hush thinking`) |
 | Genuine assistant text | All tool shells (built-in and user-defined) |
-| Your selected activity animation while Pi works | Operational user rows marked with `U+2063` envelopes |
+| Your selected activity animation, plus optional live status text | Operational user rows marked with `U+2063` envelopes |
 
 Hidden content remains in the session and comes back when you turn Hush off. `/export` and `/share` briefly restore Pi's normal rendering so exported content remains complete.
 
@@ -67,15 +67,23 @@ Restart Pi (or `/reload`) after install. Project-local installs require project 
 ```text
 /hush on                  # Hush on, thinking hidden
 /hush thinking            # Hush on, toggle thinking / CoT
+/hush activity            # Hush on, toggle live activity text
 /hush animation           # choose an animation
-/hush animation wave      # compact Braille waveform (default)
+/hush animation wave      # higher-frequency Braille waveform (default)
 /hush animation bars      # compact equalizer bars
+/hush animation orbit     # satellite orbiting a central body
+/hush animation jumping-dots # three hollow dots passing a bounce
+/hush animation shooting-star # star crossing all available width
+/hush animation flock     # fine-dot migrating birds; at most two rows
+/hush animation fish-loop # responsive fish; at most three rows
 /hush off                 # restore ordinary transcript
 ```
 
-Pi provides nested argument completion after typing `/hush `. Selecting an animation also enables Hush; `/hush off` preserves the selection for the next `/hush on`.
+Pi provides nested argument completion after typing `/hush `. Selecting an animation also enables Hush; `/hush off` preserves the animation and activity-text selections for the next `/hush on`.
 
-The `wave` and `bars` loaders use one temporary, single-row widget with a small vanilla-like left indent. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
+Activity text is **off by default**. When enabled, the same row adds a concise, dim summary such as `Thinking…`, `Responding…`, or `Running read…`. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped.
+
+The built-in `wave`, `bars`, `orbit`, `jumping-dots`, and `shooting-star` loaders use one temporary, single-row widget with a one-column inset aligned to Pi's conversation text. The opt-in `fish-loop` uses at most three rows. `flock` draws fine-dot wing silhouettes in at most two rows and 20 columns: birds migrate steadily left to right, with new formations entering rather than circling back. Resizing reveals more or less of the same flight without resetting it. Both fall back to one row in small panes; below ten columns, `flock` keeps a single bird flapping in place. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
 
 There are intentionally no bare `/hush`, `/hush thinking off`, or alias forms.
 
@@ -96,6 +104,8 @@ Contents:
 Missing file → defaults to **on**. Override the path with `PI_HUSH_PREFERENCE_PATH`.
 
 The selected animation is stored separately in `~/.pi/agent/hush/selected-animation`, keeping the main Hush preference simple. It defaults to `wave`; override its path with `PI_HUSH_ANIMATION_PATH`.
+
+The activity-text option is stored in `~/.pi/agent/hush/activity-text` as `on` or `off`. A missing or malformed file defaults to `off`; override its path with `PI_HUSH_ACTIVITY_PATH`.
 
 Preferences are restored on every `session_start` (startup, resume, new, fork, reload).
 
@@ -155,10 +165,18 @@ extensions/hush/
     operational-user-layout.ts  # operational user-row zero-height adapter
     animation-preference.ts  # separate animation selection persistence
     animation-loader.ts      # global/project drop-in discovery
-    working-animation.ts     # widget contract, registry, and lifecycle host
-    working-animations.ts    # built-in animation registry
-    working-wave.ts          # compact Braille waveform loader
-    working-bars.ts          # compact equalizer-bars loader
+    activity.ts              # live status preference and lifecycle tracker
+    animation.ts             # widget contract, registry, and lifecycle host
+    animations.ts            # built-in animation registry
+    animation-cells.ts       # grouped semantic-colour cell frames
+    wave.ts                  # higher-frequency Braille waveform
+    bars.ts                  # compact equalizer bars
+    orbit.ts                 # compact projected orbit
+    jumping-dots.ts          # three-dot travelling bounce
+    shooting-star.ts         # ratio:1 shooting-star reference
+    flock.ts                 # compact two-row migrating formations
+    fish-loop.ts             # responsive three-row fish adaptation
+    braille.ts               # shared theme-coloured sub-cell rendering
 ```
 
 ## Adding an animation
@@ -206,7 +224,7 @@ Each frame associates its text with a semantic Pi theme colour. For multiple col
 }
 ```
 
-No Hush import, renderer, registry edit, timer, widget, or Pi API call is required. Hush selects and colours frames and owns the left indent, mount/unmount lifecycle, timer, clipping, frame continuity, theme updates, and cleanup. An omitted `color` defaults to `accent`.
+No Hush import, renderer, registry edit, timer, widget, or Pi API call is required. Hush selects and colours frames and owns alignment, mount/unmount lifecycle, timer, clipping, frame continuity, theme updates, and cleanup. An omitted `color` defaults to `accent`.
 
 ### Width
 
@@ -216,13 +234,15 @@ Use a number for fixed content columns:
 width: 12
 ```
 
-Or size against the available viewport after Hush's indent:
+Or size against the available viewport (after the one-column inset and activity-text reservation):
 
 ```ts
 width: { ratio: 0.35, minColumns: 8, maxColumns: 32 }
 ```
 
-The host resolves and clamps width before painting and clipping the selected frame. Advanced phase- or width-dependent animations use the same frame object: `kind: "procedural"` replaces the `frames` array with a `renderFrame()` that returns `{ text, color }` or `{ segments }`.
+Use `width: { ratio: 1 }` to consume every available animation column. The built-in `shooting-star` animation is the reference implementation; activity text still receives its reservation first.
+
+The host resolves and clamps width before painting and clipping the selected frame. Advanced phase- or width-dependent animations use the same frame object: `kind: "procedural"` replaces the `frames` array with a `renderFrame()` that returns `{ text, color }`, `{ segments }`, or `{ rows }`.
 
 ```ts
 export default {
@@ -245,13 +265,44 @@ export default {
 };
 ```
 
+### Responsive multi-row frames
+
+Both recorded and procedural animations can return rows of semantic text segments. Existing single-row contracts still work unchanged:
+
+```ts
+{
+  rows: [
+    { text: "   .", color: "muted" },
+    { segments: [{ text: "><", color: "secondary" }, { text: "(o)>", color: "accent" }] },
+    { text: "" }, // explicit blank row, not trimmed away
+  ],
+}
+```
+
+Set `maxHeight: 3` for a three-row canvas. This is a preferred height, not permission to take over the pane: the host allocates **at most three rows**, further limited to `max(1, floor(terminalRows / 8))`. Short panes therefore receive one or two rows. An optional `minWidthForMultiRow` selects a one-row allocation below that many animation columns, after the activity reservation.
+
+Procedural renderers receive `HushAnimationRenderContext`:
+
+- `width` and `height`: the allocated drawing area, not the full terminal.
+- `viewportWidth`: the complete widget width, before inset and activity reservation.
+- `elapsedMs`: active playback time, sampled on timer ticks; resizing and theme changes never advance or restart it.
+- `frame`: `floor(elapsedMs / intervalMs)`, retained for existing renderers.
+
+Draw a smaller rendition when the area is too small, rather than scaling terminal characters or relying on cropping. For example, `fish-loop` adapts its path and drawing to the allocated area while keeping the same loop phase. The host clips overflow, pads blank rows and columns, and keeps the allocated height stable between resizes; short frames cannot make the editor jump. Recorded frames use top-left clipping when they do not fit (there is no per-frame trimming or recentering), so responsive artwork should use a procedural renderer to choose variants.
+
+Playback pauses while unmounted and resumes from the last displayed frame. Missed timer ticks catch up using a monotonic clock rather than slowing the animation. Frame durations remain uniform via `intervalMs`; per-frame timing and editor-style grids/layers are not part of this contract.
+
+The fish is an original compact interpretation inspired by [CameronFoxly's Fish Loop](https://ascii-motion.app/community/project/424d1127-7ab4-449a-ac73-a543524a4141), not an import or a scaled copy of its 60×30 artwork.
+
 Procedural animation code never receives the theme palette and never emits styled terminal strings; Hush consumes and paints its semantic frame exactly like a declarative frame.
 
-The registry rejects invalid IDs, intervals, widths, colours, frames, duplicate IDs, and heights outside 1–10. A broken file is reported and skipped without preventing other animations from loading. Project-local modules execute code and are therefore scanned only for trusted projects.
+Prefer predictable single-column glyphs in animation contracts. Emoji, variation selectors, zero-width joiners, combining marks, and East Asian ambiguous symbols can render at inconsistent widths across terminals. ASCII glyphs such as `.`, `o`, `O`, `@`, `*`, and `-` are safest. Built-ins that intentionally use Braille, blocks, or circles cover them with visible-width tests. Font appearance and ambiguous character widths can still vary between terminals.
+
+The registry rejects invalid IDs, intervals, widths, colours, frames, duplicate IDs, and declared heights outside 1–10. Playback still has a strict three-row cap. Frames reject terminal control sequences, and `{ rows }` must stay within the declared `maxHeight`. A broken file is reported and skipped without preventing other animations from loading. Project-local modules execute code and are therefore scanned only for trusted projects.
 
 ### Built-ins and published extensions
 
-Repository built-ins still live in `working-animations.ts`. To publish an animation as its own Pi package, keep the same contract as `animation.ts` and use the public one-line adapter as the package extension entrypoint:
+Repository built-ins still live in `animations.ts`. To publish an animation as its own Pi package, keep the same contract as `animation.ts` and use the public one-line adapter as the package extension entrypoint:
 
 ```ts
 // index.ts

@@ -36,6 +36,7 @@ import {
   hushPresentationIsActive,
   hushThinkingIsVisible,
   DEFAULT_HUSH_PREFERENCE,
+  HushPresentationPublisher,
   parseHushPreference,
   serializeHushPreference,
   setHushStockExportRendering,
@@ -43,30 +44,54 @@ import {
 import { getHushArgumentCompletions } from "../extensions/hush/index.ts";
 import {
   HUSH_ANIMATION_MAX_HEIGHT,
-  HushWorkingAnimationHost,
-  HushWorkingAnimationRegistry,
+  HUSH_LOADER_INDENT,
+  HushAnimationHost,
+  HushAnimationRegistry,
+  composeHushWorkingLine,
   defineHushWorkingAnimation,
   normalizeHushWidgetFrame,
   renderHushAnimation,
   resolveHushAnimationWidth,
-} from "../extensions/hush/lib/working-animation.ts";
+} from "../extensions/hush/lib/animation.ts";
 import {
-  BUILT_IN_HUSH_WORKING_ANIMATIONS,
-  DEFAULT_HUSH_WORKING_ANIMATION_ID,
-} from "../extensions/hush/lib/working-animations.ts";
+  DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
+  HushActivityTracker,
+  parseHushActivityPreference,
+  sanitizeHushToolName,
+  serializeHushActivityPreference,
+} from "../extensions/hush/lib/activity.ts";
 import {
-  HUSH_WORKING_BARS_ANIMATION,
-  HUSH_WORKING_BARS_MAX_HEIGHT,
-  renderHushWorkingBarCells,
-  renderHushWorkingBars,
-} from "../extensions/hush/lib/working-bars.ts";
+  BUILT_IN_HUSH_ANIMATIONS,
+  DEFAULT_HUSH_ANIMATION_ID,
+} from "../extensions/hush/lib/animations.ts";
 import {
-  HUSH_WORKING_WAVE_ANIMATION,
-  HUSH_WORKING_WAVE_MAX_HEIGHT,
-  HUSH_WORKING_WAVE_WIDTH,
-  renderHushWorkingWave,
-  renderHushWorkingWaveCells,
-} from "../extensions/hush/lib/working-wave.ts";
+  HUSH_BARS_ANIMATION,
+  HUSH_BARS_MAX_HEIGHT,
+  renderHushBarCells,
+  renderHushBars,
+} from "../extensions/hush/lib/bars.ts";
+import {
+  HUSH_SHOOTING_STAR_ANIMATION,
+  renderHushShootingStar,
+} from "../extensions/hush/lib/shooting-star.ts";
+import {
+  HUSH_JUMPING_DOTS_ANIMATION,
+  HUSH_JUMPING_DOT_LEVELS,
+  HUSH_JUMPING_DOTS_WIDTH,
+  renderHushJumpingDots,
+} from "../extensions/hush/lib/jumping-dots.ts";
+import {
+  HUSH_ORBIT_ANIMATION,
+  renderHushOrbit,
+} from "../extensions/hush/lib/orbit.ts";
+import {
+  HUSH_WAVE_ANIMATION,
+  HUSH_WAVE_MAX_HEIGHT,
+  HUSH_WAVE_WAVELENGTH,
+  HUSH_WAVE_WIDTH,
+  renderHushWave,
+  renderHushWaveCells,
+} from "../extensions/hush/lib/wave.ts";
 
 // --- operational markers ---
 const hide = encodeHushHideInput("watcher done");
@@ -128,10 +153,19 @@ assert.equal(parseHushAnimationPreference("not valid!"), undefined);
 assert.equal(serializeHushAnimationPreference("bars"), "bars\n");
 assert.throws(() => serializeHushAnimationPreference("not valid!"), /Invalid/);
 
+// Activity text is a separate, default-off preference.
+assert.equal(DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED, false);
+assert.equal(parseHushActivityPreference("on\n"), true);
+assert.equal(parseHushActivityPreference(" OFF "), false);
+assert.equal(parseHushActivityPreference("unknown"), false);
+assert.equal(parseHushActivityPreference(""), false);
+assert.equal(serializeHushActivityPreference(true), "on\n");
+assert.equal(serializeHushActivityPreference(false), "off\n");
+
 // --- command argument completion ---
 assert.deepEqual(
   getHushArgumentCompletions("")?.map((item) => item.value),
-  ["on", "thinking", "animation", "off"],
+  ["on", "thinking", "activity", "animation", "off"],
 );
 assert.deepEqual(
   getHushArgumentCompletions("thi")?.map((item) => item.value),
@@ -140,13 +174,80 @@ assert.deepEqual(
 assert.equal(getHushArgumentCompletions("thinking "), null);
 assert.deepEqual(
   getHushArgumentCompletions("animation ")?.map((item) => item.value),
-  ["animation wave", "animation bars"],
+  [
+    "animation wave",
+    "animation bars",
+    "animation orbit",
+    "animation jumping-dots",
+    "animation shooting-star",
+    "animation flock",
+    "animation fish-loop",
+  ],
 );
 assert.deepEqual(
   getHushArgumentCompletions("animation b")?.map((item) => item.value),
   ["animation bars"],
 );
+assert.deepEqual(
+  getHushArgumentCompletions("act")?.map((item) => item.value),
+  ["activity"],
+);
+assert.equal(getHushArgumentCompletions("activity "), null);
 assert.equal(getHushArgumentCompletions("unknown"), null);
+
+// --- working activity state ---
+assert.equal(sanitizeHushToolName(" read\n\tfiles "), "read files");
+assert.equal(sanitizeHushToolName("\x1b[31mread\x1b[0m"), "read");
+assert.equal(sanitizeHushToolName("\x1b]0;bad title\x07bash"), "bash");
+assert.equal(
+  sanitizeHushToolName(
+    "\x1b]8;;https://example.com\x1b\\read\x1b]8;;\x1b\\",
+  ),
+  "read",
+);
+assert.equal(sanitizeHushToolName("\x1b]unterminated"), "tool");
+assert.equal(sanitizeHushToolName("\u061c\u202eread\u2066"), "read");
+assert.equal(sanitizeHushToolName("\n\t\x00"), "tool");
+assert.equal(sanitizeHushToolName("x".repeat(100)).length, 80);
+
+const activity = new HushActivityTracker();
+assert.equal(activity.text, undefined);
+activity.startRun();
+assert.equal(activity.text, "Thinking…");
+activity.updateAssistant("thinking_delta");
+assert.equal(activity.text, "Thinking…");
+activity.updateAssistant("text_start");
+assert.equal(activity.text, "Responding…");
+activity.updateAssistant("toolcall_start");
+assert.equal(activity.text, "Thinking…");
+activity.startTool("read-1", "read");
+assert.equal(activity.text, "Running read…");
+activity.startTool("bash-1", "bash");
+activity.startTool("grep-1", "grep");
+assert.equal(activity.text, "Running read +2…");
+activity.startTool("read-1", "ignored duplicate");
+activity.updateAssistant("text_delta");
+assert.equal(activity.text, "Running read +2…");
+activity.endTool("bash-1");
+assert.equal(activity.text, "Running read +1…");
+activity.endTool("unknown");
+assert.equal(activity.text, "Running read +1…");
+activity.endTool("read-1");
+assert.equal(activity.text, "Running grep…");
+activity.endTool("grep-1");
+assert.equal(activity.text, "Thinking…");
+activity.updateAssistant("text_delta");
+assert.equal(activity.text, "Responding…");
+activity.endRun();
+assert.equal(activity.text, "Thinking…");
+activity.startTool("stale", "bash");
+activity.startRun();
+assert.equal(activity.text, "Thinking…");
+activity.reset();
+assert.equal(activity.text, undefined);
+activity.startTurn();
+activity.startTool("orphan", "bash");
+assert.equal(activity.text, undefined);
 
 // --- visibility policy ---
 setHushStockExportRendering(false);
@@ -185,6 +286,47 @@ assert.deepEqual(DEFAULT_HUSH_PREFERENCE, {
   thinking: false,
 });
 
+// Identical presentation states are emitted once, not once per token delta.
+const presentationPublisher = new HushPresentationPublisher();
+const publishedPresentationStates: unknown[] = [];
+const presentationState = {
+  active: true,
+  thinking: false,
+  workingAnimationId: "wave",
+  activityTextEnabled: true,
+  activityText: "Thinking…",
+  stockExportRendering: false,
+};
+assert.equal(
+  presentationPublisher.publish(presentationState, (state) =>
+    publishedPresentationStates.push(state),
+  ),
+  true,
+);
+assert.equal(
+  presentationPublisher.publish({ ...presentationState }, (state) =>
+    publishedPresentationStates.push(state),
+  ),
+  false,
+);
+assert.equal(
+  presentationPublisher.publish(
+    { ...presentationState, activityText: "Responding…" },
+    (state) => publishedPresentationStates.push(state),
+  ),
+  true,
+);
+assert.equal(publishedPresentationStates.length, 2);
+presentationPublisher.reset();
+assert.equal(
+  presentationPublisher.publish(
+    { ...presentationState, activityText: "Responding…" },
+    (state) => publishedPresentationStates.push(state),
+  ),
+  true,
+);
+assert.equal(publishedPresentationStates.length, 3);
+
 // --- adapter exports load without throwing when Pi APIs exist ---
 const { installHushAssistantLayout } = await import(
   "../extensions/hush/lib/assistant-layout.ts"
@@ -209,14 +351,14 @@ installHushOperationalUserLayout();
 installHushToolExecutionLayout();
 
 // --- working animation contracts ---
-assert.equal(DEFAULT_HUSH_WORKING_ANIMATION_ID, "wave");
+assert.equal(DEFAULT_HUSH_ANIMATION_ID, "wave");
 assert.deepEqual(
-  BUILT_IN_HUSH_WORKING_ANIMATIONS.map((animation) => animation.id),
-  ["wave", "bars"],
+  BUILT_IN_HUSH_ANIMATIONS.map((animation) => animation.id),
+  ["wave", "bars", "orbit", "jumping-dots", "shooting-star", "flock", "fish-loop"],
 );
 assert.equal(
-  BUILT_IN_HUSH_WORKING_ANIMATIONS.every(
-    (animation) => animation.maxHeight === 1,
+  BUILT_IN_HUSH_ANIMATIONS.every(
+    (animation) => animation.maxHeight >= 1 && animation.maxHeight <= 3,
   ),
   true,
 );
@@ -227,6 +369,51 @@ const normalizedWidgetFrame = normalizeHushWidgetFrame(
 );
 assert.deepEqual(normalizedWidgetFrame.map(visibleWidth), [3]);
 assert.equal(normalizedWidgetFrame[0]?.startsWith("abc"), true);
+assert.equal(
+  composeHushWorkingLine({
+    animationLine: "abc",
+    animationWidth: 3,
+    viewportWidth: 30,
+  }),
+  "abc",
+);
+assert.equal(
+  composeHushWorkingLine({
+    animationLine: "x",
+    animationWidth: 3,
+    viewportWidth: 30,
+    activityText: "Thinking…",
+  }),
+  "x   Thinking…",
+);
+assert.equal(
+  composeHushWorkingLine({
+    animationLine: "abc",
+    animationWidth: 3,
+    viewportWidth: 5,
+    activityText: "Thinking…",
+  }),
+  "abc …",
+);
+const clippedWorkingLine = composeHushWorkingLine({
+  animationLine: "abc",
+  animationWidth: 3,
+  viewportWidth: 10,
+  activityText: "Responding…",
+  styleActivity: (text) => `\x1b[2m${text}\x1b[22m`,
+});
+assert.equal(visibleWidth(clippedWorkingLine), 10);
+assert.equal(clippedWorkingLine.includes("\x1b[2mRespo…\x1b[22m"), true);
+assert.equal(clippedWorkingLine.includes("\n"), false);
+assert.equal(
+  composeHushWorkingLine({
+    animationLine: "abc",
+    animationWidth: 3,
+    viewportWidth: 9,
+    activityText: "Thinking…",
+  }),
+  "abc Thin…",
+);
 const testAnimation = defineHushWorkingAnimation({
   id: "test",
   label: "Test",
@@ -285,7 +472,7 @@ assert.deepEqual(
   ),
   ["<secondary>•</secondary><highlight>●</highlight>"],
 );
-const testRegistry = new HushWorkingAnimationRegistry([
+const testRegistry = new HushAnimationRegistry([
   testAnimation,
   declarativeAnimation,
 ]);
@@ -294,14 +481,14 @@ assert.equal(testRegistry.get("declarative"), declarativeAnimation);
 assert.throws(() => testRegistry.register(testAnimation), /Duplicate/);
 assert.throws(
   () =>
-    new HushWorkingAnimationRegistry([
+    new HushAnimationRegistry([
       { ...testAnimation, id: undefined as unknown as string },
     ]),
   /Invalid Hush animation id/,
 );
 assert.throws(
   () =>
-    new HushWorkingAnimationRegistry([
+    new HushAnimationRegistry([
       {
         ...declarativeAnimation,
         id: "bad-color",
@@ -338,7 +525,7 @@ discoveryHandler?.({
 assert.equal(discoveredAnimationId, "test");
 assert.throws(
   () =>
-    new HushWorkingAnimationRegistry([
+    new HushAnimationRegistry([
       {
         ...testAnimation,
         id: "too-tall",
@@ -386,7 +573,7 @@ try {
     loadedAnimations.map(({ animation }) => animation.id),
     ["pack", "spark"],
   );
-  const discoveredRegistry = new HushWorkingAnimationRegistry(
+  const discoveredRegistry = new HushAnimationRegistry(
     loadedAnimations.map(({ animation }) => animation),
   );
   assert.ok(discoveredRegistry.get("spark"));
@@ -399,9 +586,15 @@ type TestIntervalHandle = ReturnType<typeof setInterval>;
 const realSetInterval = globalThis.setInterval;
 const realClearInterval = globalThis.clearInterval;
 const intervalCallbacks = new Map<TestIntervalHandle, () => void>();
-globalThis.setInterval = ((callback: () => void) => {
+const realPerformanceNow = performance.now;
+let hostNow = 0;
+performance.now = () => hostNow;
+globalThis.setInterval = ((callback: () => void, intervalMs: number) => {
   const handle = { unref() {} } as unknown as TestIntervalHandle;
-  intervalCallbacks.set(handle, callback);
+  intervalCallbacks.set(handle, () => {
+    hostNow += intervalMs;
+    callback();
+  });
   return handle;
 }) as typeof setInterval;
 globalThis.clearInterval = ((handle: TestIntervalHandle | undefined) => {
@@ -421,12 +614,18 @@ const invalidFrameAnimation = defineHushWorkingAnimation({
   renderFrame: (() =>
     "not an array") as unknown as typeof testAnimation.renderFrame,
 });
-const hostRegistry = new HushWorkingAnimationRegistry([
-  ...BUILT_IN_HUSH_WORKING_ANIMATIONS,
+const hostRegistry = new HushAnimationRegistry([
+  ...BUILT_IN_HUSH_ANIMATIONS,
   throwingAnimation,
   invalidFrameAnimation,
 ]);
-const hostTui = { requestRender() {} } as unknown as TUI;
+let hostRenderRequests = 0;
+const hostTui = {
+  terminal: { rows: 24 },
+  requestRender() {
+    hostRenderRequests += 1;
+  },
+} as unknown as TUI;
 const renderedThemeColors: string[] = [];
 const hostTheme = {
   fg: (color: string, text: string) => {
@@ -456,9 +655,9 @@ const hostUi = {
     hostNotifications.push(message);
   },
 } as unknown as ExtensionUIContext;
-const animationHost = new HushWorkingAnimationHost(
+const animationHost = new HushAnimationHost(
   hostRegistry,
-  DEFAULT_HUSH_WORKING_ANIMATION_ID,
+  DEFAULT_HUSH_ANIMATION_ID,
 );
 animationHost.apply(hostUi, { enabled: true, animationId: "wave" });
 assert.equal(hostWidget, undefined);
@@ -471,8 +670,13 @@ const mountedWaveWidget = (():
   | undefined => hostWidget)();
 assert.ok(mountedWaveWidget);
 const initialWaveFrame = mountedWaveWidget.render(30);
-assert.equal(initialWaveFrame.length, HUSH_WORKING_WAVE_MAX_HEIGHT);
-assert.equal(visibleWidth(initialWaveFrame[0] ?? ""), 14);
+assert.equal(initialWaveFrame.length, HUSH_WAVE_MAX_HEIGHT);
+assert.equal(
+  visibleWidth(initialWaveFrame[0] ?? ""),
+  HUSH_LOADER_INDENT +
+    Math.min(HUSH_WAVE_WIDTH, 30 - HUSH_LOADER_INDENT),
+);
+assert.equal(initialWaveFrame[0]?.search(/\S/), HUSH_LOADER_INDENT);
 assert.equal(
   ["accent", "syntaxVariable", "syntaxFunction", "warning"].every((color) =>
     renderedThemeColors.includes(color),
@@ -498,6 +702,51 @@ const resumedWaveWidget = (():
   | undefined => hostWidget)();
 assert.ok(resumedWaveWidget);
 assert.deepEqual(resumedWaveWidget.render(30), advancedWaveFrame);
+
+// Activity updates reuse the mounted widget and timer, preserving animation state.
+animationHost.setActivityText("Thinking…");
+assert.deepEqual(resumedWaveWidget.render(30), advancedWaveFrame);
+animationHost.apply(hostUi, {
+  enabled: true,
+  animationId: "wave",
+  activityTextEnabled: true,
+});
+const activityWaveWidget = (():
+  | (Component & { dispose?(): void })
+  | undefined => hostWidget)();
+assert.ok(activityWaveWidget);
+assert.equal(activityWaveWidget, resumedWaveWidget);
+assert.equal(intervalCallbacks.size, 1);
+assert.equal(activityWaveWidget.render(40)[0]?.includes("Thinking…"), true);
+assert.equal(activityWaveWidget.render(14)[0], " Thinking…");
+const rendersBeforeActivityUpdate = hostRenderRequests;
+animationHost.setActivityText("Running read…");
+assert.equal(hostWidget, activityWaveWidget);
+assert.equal(intervalCallbacks.size, 1);
+assert.equal(hostRenderRequests, rendersBeforeActivityUpdate + 1);
+assert.equal(activityWaveWidget.render(40)[0]?.includes("Running read…"), true);
+
+// Activity keeps 24 columns ahead of even a 100%-width animation.
+animationHost.apply(hostUi, {
+  enabled: true,
+  animationId: "shooting-star",
+  activityTextEnabled: true,
+});
+const shootingStarWidget = (():
+  | (Component & { dispose?(): void })
+  | undefined => hostWidget)();
+assert.ok(shootingStarWidget);
+const shootingStarActivityLine = shootingStarWidget.render(40)[0] ?? "";
+assert.equal(visibleWidth(shootingStarActivityLine), 30);
+assert.equal(shootingStarActivityLine.includes("Running read…"), true);
+animationHost.apply(hostUi, {
+  enabled: true,
+  animationId: "shooting-star",
+  activityTextEnabled: false,
+});
+assert.equal(hostWidget, shootingStarWidget);
+assert.equal(intervalCallbacks.size, 1);
+assert.equal(visibleWidth(shootingStarWidget.render(40)[0] ?? ""), 40);
 
 // User-authored renderer failures never escape the widget or leave a blank loader.
 animationHost.apply(hostUi, { enabled: true, animationId: "throwing" });
@@ -540,7 +789,7 @@ assert.notEqual(mountedBarsWidget, resumedWaveWidget);
 assert.equal(intervalCallbacks.size, 1);
 assert.equal(
   mountedBarsWidget.render(30).length,
-  HUSH_WORKING_BARS_MAX_HEIGHT,
+  HUSH_BARS_MAX_HEIGHT,
 );
 animationHost.setWorking(false);
 assert.equal(hostWidget, undefined);
@@ -571,6 +820,7 @@ animationHost.dispose({ restorePi: true });
 assert.equal(intervalCallbacks.size, 0);
 globalThis.setInterval = realSetInterval;
 globalThis.clearInterval = realClearInterval;
+performance.now = realPerformanceNow;
 
 // --- compact accent waveform ---
 const plainPalette = {
@@ -580,9 +830,9 @@ const plainPalette = {
   highlight: (text: string) => text,
   muted: (text: string) => text,
 };
-assert.equal(renderHushWorkingWaveCells(0, 0), "");
-for (const width of [1, 3, HUSH_WORKING_WAVE_WIDTH]) {
-  const frame = renderHushWorkingWaveCells(width, 0);
+assert.equal(renderHushWaveCells(0, 0), "");
+for (const width of [1, 3, HUSH_WAVE_WIDTH]) {
+  const frame = renderHushWaveCells(width, 0);
   assert.equal(visibleWidth(frame), width);
   assert.equal(
     Array.from(frame).every((glyph) => {
@@ -592,6 +842,14 @@ for (const width of [1, 3, HUSH_WORKING_WAVE_WIDTH]) {
     true,
   );
 }
+const highFrequencyWave = Array.from(
+  renderHushWaveCells(HUSH_WAVE_WIDTH, 0),
+);
+const waveCellsPerCycle = HUSH_WAVE_WAVELENGTH / 2;
+assert.deepEqual(
+  highFrequencyWave.slice(0, waveCellsPerCycle),
+  highFrequencyWave.slice(waveCellsPerCycle, waveCellsPerCycle * 2),
+);
 assert.equal(resolveHushAnimationWidth(12, 0), 0);
 assert.equal(resolveHushAnimationWidth(12, 8), 8);
 assert.equal(resolveHushAnimationWidth(12, 80), 12);
@@ -611,47 +869,47 @@ assert.equal(
 );
 assert.throws(
   () =>
-    new HushWorkingAnimationRegistry([
+    new HushAnimationRegistry([
       { ...testAnimation, id: "bad-width", width: { ratio: 2 } },
     ]),
   /Invalid width/,
 );
 const waveAtStart = renderHushAnimation(
-  HUSH_WORKING_WAVE_ANIMATION,
+  HUSH_WAVE_ANIMATION,
   {
     frame: 0,
-    width: HUSH_WORKING_WAVE_WIDTH,
+    width: HUSH_WAVE_WIDTH,
     viewportWidth: 80,
   },
   plainPalette,
 );
 const waveLater = renderHushAnimation(
-  HUSH_WORKING_WAVE_ANIMATION,
+  HUSH_WAVE_ANIMATION,
   {
     frame: 4,
-    width: HUSH_WORKING_WAVE_WIDTH,
+    width: HUSH_WAVE_WIDTH,
     viewportWidth: 80,
   },
   plainPalette,
 );
 assert.equal(waveAtStart.length, 1);
-assert.equal(visibleWidth(waveAtStart[0] ?? ""), HUSH_WORKING_WAVE_WIDTH);
+assert.equal(visibleWidth(waveAtStart[0] ?? ""), HUSH_WAVE_WIDTH);
 assert.notDeepEqual(waveAtStart, waveLater);
 assert.notDeepEqual(
-  renderHushWorkingWave({
+  renderHushWave({
     frame: 0,
-    width: HUSH_WORKING_WAVE_WIDTH,
+    width: HUSH_WAVE_WIDTH,
     viewportWidth: 80,
   }),
-  renderHushWorkingWave({
+  renderHushWave({
     frame: 4,
-    width: HUSH_WORKING_WAVE_WIDTH,
+    width: HUSH_WAVE_WIDTH,
     viewportWidth: 80,
   }),
 );
 for (const width of [1, 2, 8]) {
   const lines = renderHushAnimation(
-    HUSH_WORKING_WAVE_ANIMATION,
+    HUSH_WAVE_ANIMATION,
     { frame: 2, width, viewportWidth: width },
     plainPalette,
   );
@@ -660,21 +918,21 @@ for (const width of [1, 2, 8]) {
 
 // --- compact accent equalizer bars ---
 const barCharacters = new Set(Array.from("▁▂▃▄▅▆▇█"));
-const barsAtStart = renderHushWorkingBarCells(10, 0);
-const barsLater = renderHushWorkingBarCells(10, 3);
+const barsAtStart = renderHushBarCells(10, 0);
+const barsLater = renderHushBarCells(10, 3);
 assert.equal(visibleWidth(barsAtStart), 10);
 assert.equal(Array.from(barsAtStart).every((bar) => barCharacters.has(bar)), true);
 assert.notEqual(barsAtStart, barsLater);
 const renderedBars = renderHushAnimation(
-  HUSH_WORKING_BARS_ANIMATION,
+  HUSH_BARS_ANIMATION,
   { frame: 0, width: 10, viewportWidth: 80 },
   plainPalette,
 );
-assert.equal(renderedBars.length, HUSH_WORKING_BARS_MAX_HEIGHT);
+assert.equal(renderedBars.length, HUSH_BARS_MAX_HEIGHT);
 assert.equal(visibleWidth(renderedBars[0] ?? ""), 10);
 assert.ok(
   "segments" in
-    renderHushWorkingBars({
+    renderHushBars({
       frame: 0,
       width: 10,
       viewportWidth: 80,
@@ -682,11 +940,123 @@ assert.ok(
 );
 for (const width of [1, 2, 8]) {
   const lines = renderHushAnimation(
-    HUSH_WORKING_BARS_ANIMATION,
+    HUSH_BARS_ANIMATION,
     { frame: 2, width, viewportWidth: width },
     plainPalette,
   );
   assert.equal(lines.every((line) => visibleWidth(line) <= width), true);
 }
+
+// --- compact orbit ---
+const orbitAtStart = renderHushAnimation(
+  HUSH_ORBIT_ANIMATION,
+  { frame: 0, width: 9, viewportWidth: 40 },
+  plainPalette,
+);
+const orbitQuarterTurn = renderHushAnimation(
+  HUSH_ORBIT_ANIMATION,
+  { frame: 4, width: 9, viewportWidth: 40 },
+  plainPalette,
+);
+assert.equal(visibleWidth(orbitAtStart[0] ?? ""), 9);
+assert.notDeepEqual(orbitAtStart, orbitQuarterTurn);
+assert.deepEqual(
+  renderHushOrbit({ frame: 4, width: 9, viewportWidth: 40 }),
+  renderHushOrbit({ frame: 4, width: 9, viewportWidth: 40 }),
+);
+const themedOrbit = renderHushAnimation(
+  HUSH_ORBIT_ANIMATION,
+  { frame: 0, width: 9, viewportWidth: 40 },
+  taggedPalette,
+)[0] ?? "";
+assert.equal(themedOrbit.includes("<accent>"), true);
+assert.equal(themedOrbit.includes("<highlight>"), true);
+for (const width of [1, 4, 9]) {
+  const line = renderHushAnimation(
+    HUSH_ORBIT_ANIMATION,
+    { frame: 3, width, viewportWidth: width },
+    plainPalette,
+  )[0] ?? "";
+  assert.equal(visibleWidth(line), width);
+}
+
+// --- compact travelling bounce ---
+assert.deepEqual(HUSH_JUMPING_DOT_LEVELS, ["°", "°", "o", "ₒ", "ₒ", "o"]);
+for (const glyph of new Set(HUSH_JUMPING_DOT_LEVELS)) {
+  assert.equal(visibleWidth(glyph), 1);
+}
+const jumpingDotsAtStart = renderHushAnimation(
+  HUSH_JUMPING_DOTS_ANIMATION,
+  { frame: 0, width: HUSH_JUMPING_DOTS_WIDTH, viewportWidth: 40 },
+  plainPalette,
+)[0] ?? "";
+assert.equal(jumpingDotsAtStart, "° ₒ o");
+assert.equal(
+  renderHushAnimation(
+    HUSH_JUMPING_DOTS_ANIMATION,
+    { frame: 2, width: HUSH_JUMPING_DOTS_WIDTH, viewportWidth: 40 },
+    plainPalette,
+  )[0],
+  "o ° ₒ",
+);
+assert.equal(
+  renderHushAnimation(
+    HUSH_JUMPING_DOTS_ANIMATION,
+    { frame: 4, width: HUSH_JUMPING_DOTS_WIDTH, viewportWidth: 40 },
+    plainPalette,
+  )[0],
+  "ₒ o °",
+);
+assert.deepEqual(
+  renderHushJumpingDots({
+    frame: 3,
+    width: HUSH_JUMPING_DOTS_WIDTH,
+    viewportWidth: 40,
+  }),
+  renderHushJumpingDots({
+    frame: 3,
+    width: HUSH_JUMPING_DOTS_WIDTH,
+    viewportWidth: 40,
+  }),
+);
+for (const width of [1, 2, HUSH_JUMPING_DOTS_WIDTH]) {
+  const line = renderHushAnimation(
+    HUSH_JUMPING_DOTS_ANIMATION,
+    { frame: 2, width, viewportWidth: width },
+    plainPalette,
+  )[0] ?? "";
+  assert.equal(visibleWidth(line), width);
+}
+
+// --- ratio:1 shooting-star reference ---
+assert.deepEqual(HUSH_SHOOTING_STAR_ANIMATION.width, { ratio: 1 });
+const shootingStarAtStart = renderHushAnimation(
+  HUSH_SHOOTING_STAR_ANIMATION,
+  { frame: 0, width: 20, viewportWidth: 20 },
+  plainPalette,
+);
+const shootingStarLater = renderHushAnimation(
+  HUSH_SHOOTING_STAR_ANIMATION,
+  { frame: 5, width: 20, viewportWidth: 20 },
+  plainPalette,
+);
+assert.notDeepEqual(shootingStarAtStart, shootingStarLater);
+assert.deepEqual(
+  renderHushShootingStar({ frame: 5, width: 20, viewportWidth: 20 }),
+  renderHushShootingStar({ frame: 5, width: 20, viewportWidth: 20 }),
+);
+for (const width of [1, 8, 40]) {
+  const line = renderHushAnimation(
+    HUSH_SHOOTING_STAR_ANIMATION,
+    { frame: 5, width, viewportWidth: width },
+    plainPalette,
+  )[0] ?? "";
+  assert.equal(visibleWidth(line), width);
+}
+
+// Keep the existing entrypoint running the focused behavior suites too.
+await import("./responsive-animation-check.ts");
+await import("./fish-check.ts");
+await import("./flock-check.ts");
 
 console.log("pi-hush self-check: ok");

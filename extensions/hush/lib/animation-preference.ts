@@ -1,7 +1,7 @@
 import {
   HUSH_ANIMATION_ID_PATTERN,
-  type HushWorkingAnimationRegistry,
-} from "./working-animation.ts";
+  type HushAnimationRegistry,
+} from "./animation.ts";
 
 /** Parse one stable animation id without coupling persistence to built-ins. */
 export function parseHushAnimationPreference(
@@ -14,7 +14,7 @@ export function parseHushAnimationPreference(
 /** Resolve malformed and no-longer-registered ids to the caller's default. */
 export function resolveHushAnimationPreference(
   text: string,
-  registry: HushWorkingAnimationRegistry,
+  registry: HushAnimationRegistry,
   defaultId: string,
 ): string {
   const id = parseHushAnimationPreference(text);

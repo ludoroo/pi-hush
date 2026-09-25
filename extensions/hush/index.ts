@@ -23,6 +23,7 @@
  * Usage:
  *   /hush on                  Hush on, thinking hidden
  *   /hush thinking            Hush on, toggle thinking / CoT
+ *   /hush activity            Hush on, toggle live activity text
  *   /hush animation <name>    Select a working animation
  *   /hush off                 Hush off
  *
@@ -57,24 +58,32 @@ import { installHushAssistantLayout } from "./lib/assistant-layout.ts";
 import { installHushOperationalUserLayout } from "./lib/operational-user-layout.ts";
 import { installHushToolExecutionLayout } from "./lib/tool-execution-layout.ts";
 import {
-  HUSH_ANIMATION_DISCOVERY_EVENT,
-  HushWorkingAnimationHost,
-  type HushAnimationDiscovery,
-} from "./lib/working-animation.ts";
+  DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
+  HushActivityTracker,
+  parseHushActivityPreference,
+  serializeHushActivityPreference,
+} from "./lib/activity.ts";
 import {
-  BUILT_IN_HUSH_WORKING_ANIMATIONS,
-  createHushWorkingAnimationRegistry,
-  DEFAULT_HUSH_WORKING_ANIMATION_ID,
-} from "./lib/working-animations.ts";
+  HUSH_ANIMATION_DISCOVERY_EVENT,
+  HushAnimationHost,
+  type HushAnimationDiscovery,
+} from "./lib/animation.ts";
+import {
+  BUILT_IN_HUSH_ANIMATIONS,
+  createHushAnimationRegistry,
+  DEFAULT_HUSH_ANIMATION_ID,
+} from "./lib/animations.ts";
 import {
   applyHushPreference,
   HUSH_PRESENTATION_EVENT,
   DEFAULT_HUSH_PREFERENCE,
+  HushPresentationPublisher,
   getHushPreference,
   parseHushPreference,
   serializeHushPreference,
   setHushStockExportRendering,
   type HushPreference,
+  type HushPresentationState,
 } from "./lib/visibility.ts";
 
 // Each presentation adapter probes the exact Pi API it patches. If a future Pi
@@ -98,7 +107,7 @@ function describeHushState(preference: HushPreference): string {
   return "Hush on — tools and thinking hidden";
 }
 
-const hushWorkingAnimations = createHushWorkingAnimationRegistry();
+const hushAnimations = createHushAnimationRegistry();
 
 const HUSH_COMMAND_ARGUMENTS: AutocompleteItem[] = [
   {
@@ -112,9 +121,14 @@ const HUSH_COMMAND_ARGUMENTS: AutocompleteItem[] = [
     description: "Keep Hush on and toggle thinking / CoT",
   },
   {
+    value: "activity",
+    label: "activity",
+    description: "Keep Hush on and toggle live activity text",
+  },
+  {
     value: "animation",
     label: "animation",
-    description: "Select a working animation",
+    description: "Select an animation",
   },
   {
     value: "off",
@@ -130,7 +144,7 @@ export function getHushArgumentCompletions(
   const animationMatch = prefix.match(/^animation\s+([^\s]*)$/);
   if (animationMatch) {
     const animationPrefix = animationMatch[1];
-    const matches = hushWorkingAnimations
+    const matches = hushAnimations
       .list()
       .filter((animation) => animation.id.startsWith(animationPrefix))
       .map((animation) => ({
@@ -156,20 +170,24 @@ export default function (pi: ExtensionAPI) {
   // Hide every tool row regardless of which extension owns the tool.
   installHushPresentationAdapter("tool-row", installHushToolExecutionLayout);
 
-  const workingAnimationHost = new HushWorkingAnimationHost(
-    hushWorkingAnimations,
-    DEFAULT_HUSH_WORKING_ANIMATION_ID,
+  const animationHost = new HushAnimationHost(
+    hushAnimations,
+    DEFAULT_HUSH_ANIMATION_ID,
   );
+  const activity = new HushActivityTracker();
+  const presentationPublisher = new HushPresentationPublisher();
   let exportRendering = false;
-  let workingAnimationId = DEFAULT_HUSH_WORKING_ANIMATION_ID;
+  let animationId = DEFAULT_HUSH_ANIMATION_ID;
+  let activityTextEnabled = DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED;
   let widgetsEnabled = false;
   let removeTerminalInputHandler: (() => void) | undefined;
 
-  const applyWorkingPresentation = (ui: ExtensionCommandContext["ui"]): void => {
-    workingAnimationHost.apply(ui, {
+  const applyAnimationPresentation = (ui: ExtensionCommandContext["ui"]): void => {
+    animationHost.apply(ui, {
       enabled: getHushPreference().active,
-      animationId: workingAnimationId,
+      animationId,
       widgetsEnabled,
+      activityTextEnabled,
     });
   };
 
@@ -181,6 +199,8 @@ export default function (pi: ExtensionAPI) {
   const animationPreferencePath =
     process.env.PI_HUSH_ANIMATION_PATH ??
     resolve(hushDir, "selected-animation");
+  const activityPreferencePath =
+    process.env.PI_HUSH_ACTIVITY_PATH ?? resolve(hushDir, "activity-text");
 
   const loadHushPreference = (): HushPreference => {
     try {
@@ -191,15 +211,25 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const loadWorkingAnimationId = (): string => {
+  const loadAnimationId = (): string => {
     try {
       return resolveHushAnimationPreference(
         readFileSync(animationPreferencePath, "utf8"),
-        hushWorkingAnimations,
-        DEFAULT_HUSH_WORKING_ANIMATION_ID,
+        hushAnimations,
+        DEFAULT_HUSH_ANIMATION_ID,
       );
     } catch {
-      return DEFAULT_HUSH_WORKING_ANIMATION_ID;
+      return DEFAULT_HUSH_ANIMATION_ID;
+    }
+  };
+
+  const loadActivityTextEnabled = (): boolean => {
+    try {
+      return parseHushActivityPreference(
+        readFileSync(activityPreferencePath, "utf8"),
+      );
+    } catch {
+      return DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED;
     }
   };
 
@@ -222,20 +252,27 @@ export default function (pi: ExtensionAPI) {
     persistText(preferencePath, serializeHushPreference(preference));
   };
 
-  const persistWorkingAnimationId = (id: string): void => {
+  const persistAnimationId = (id: string): void => {
     persistText(animationPreferencePath, serializeHushAnimationPreference(id));
   };
 
-  const refreshWorkingAnimations = async (
+  const persistActivityTextEnabled = (enabled: boolean): void => {
+    persistText(
+      activityPreferencePath,
+      serializeHushActivityPreference(enabled),
+    );
+  };
+
+  const refreshAnimations = async (
     ctx: Pick<
       ExtensionCommandContext,
       "cwd" | "hasUI" | "isProjectTrusted" | "ui"
     >,
   ) => {
-    workingAnimationHost.retryFailedAnimations();
-    hushWorkingAnimations.reset(BUILT_IN_HUSH_WORKING_ANIMATIONS);
+    animationHost.retryFailedAnimations();
+    hushAnimations.reset(BUILT_IN_HUSH_ANIMATIONS);
     const discoveredIds = new Set(
-      BUILT_IN_HUSH_WORKING_ANIMATIONS.map((animation) => animation.id),
+      BUILT_IN_HUSH_ANIMATIONS.map((animation) => animation.id),
     );
     const animationRoots = [resolve(hushDir, "animations")];
     if (ctx.isProjectTrusted()) {
@@ -249,7 +286,7 @@ export default function (pi: ExtensionAPI) {
         if (discoveredIds.has(animation.id)) {
           throw new Error(`Duplicate Hush animation id: ${animation.id}`);
         }
-        hushWorkingAnimations.register(animation);
+        hushAnimations.register(animation);
         discoveredIds.add(animation.id);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
@@ -271,7 +308,7 @@ export default function (pi: ExtensionAPI) {
           if (discoveredIds.has(animation.id)) {
             throw new Error(`Duplicate Hush animation id: ${animation.id}`);
           }
-          hushWorkingAnimations.register(animation);
+          hushAnimations.register(animation);
           discoveredIds.add(animation.id);
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error);
@@ -287,20 +324,35 @@ export default function (pi: ExtensionAPI) {
       },
     };
     pi.events.emit(HUSH_ANIMATION_DISCOVERY_EVENT, discovery);
-    if (!hushWorkingAnimations.get(workingAnimationId)) {
-      workingAnimationId = DEFAULT_HUSH_WORKING_ANIMATION_ID;
+    if (!hushAnimations.get(animationId)) {
+      animationId = DEFAULT_HUSH_ANIMATION_ID;
     }
   };
 
+  const currentActivityText = (): string | undefined =>
+    getHushPreference().active && activityTextEnabled
+      ? activity.text
+      : undefined;
+
   const publishPresentationState = (): void => {
     const preference = getHushPreference();
+    const activityText = currentActivityText();
     const state = {
       active: preference.active,
       thinking: preference.thinking,
-      workingAnimationId,
+      workingAnimationId: animationId,
+      activityTextEnabled,
+      ...(activityText === undefined ? {} : { activityText }),
       stockExportRendering: exportRendering,
-    };
-    pi.events.emit(HUSH_PRESENTATION_EVENT, state);
+    } satisfies HushPresentationState;
+    presentationPublisher.publish(state, (nextState) => {
+      pi.events.emit(HUSH_PRESENTATION_EVENT, nextState);
+    });
+  };
+
+  const syncActivity = (): void => {
+    animationHost.setActivityText(currentActivityText());
+    publishPresentationState();
   };
 
   const applyAndRefresh = (
@@ -309,7 +361,7 @@ export default function (pi: ExtensionAPI) {
   ): void => {
     applyHushPreference(preference);
     publishPresentationState();
-    applyWorkingPresentation(ctx.ui);
+    applyAnimationPresentation(ctx.ui);
     // When hush hides thinking we blank the collapsed label; otherwise restore
     // Pi's default so expanded CoT / labels render normally.
     // Toggle the label once so existing AssistantMessageComponent rows re-run
@@ -338,16 +390,21 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    presentationPublisher.reset();
     exportRendering = false;
     widgetsEnabled = ctx.mode === "tui";
+    activityTextEnabled = loadActivityTextEnabled();
+    activity.reset();
+    if (!ctx.isIdle()) activity.startRun();
 
     // Every extension factory is loaded before session_start, so event-based
     // registrations are independent of package load order.
-    await refreshWorkingAnimations(ctx);
-    workingAnimationId = loadWorkingAnimationId();
+    await refreshAnimations(ctx);
+    animationId = loadAnimationId();
     setHushStockExportRendering(false);
-    workingAnimationHost.setWorking(!ctx.isIdle());
+    animationHost.setWorking(!ctx.isIdle());
     applyAndRefresh(loadHushPreference(), ctx);
+    syncActivity();
     removeTerminalInputHandler?.();
     removeTerminalInputHandler = ctx.ui.onTerminalInput((data) => {
       if (!getKeybindings().matches(data, "tui.input.submit")) {
@@ -383,23 +440,54 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_start", () => {
-    workingAnimationHost.setWorking(true);
+    activity.startRun();
+    animationHost.setWorking(true);
+    syncActivity();
+  });
+
+  pi.on("turn_start", () => {
+    activity.startTurn();
+    syncActivity();
+  });
+
+  pi.on("message_update", (event) => {
+    activity.updateAssistant(event.assistantMessageEvent.type);
+    syncActivity();
+  });
+
+  pi.on("tool_execution_start", (event) => {
+    activity.startTool(event.toolCallId, event.toolName);
+    syncActivity();
+  });
+
+  pi.on("tool_execution_end", (event) => {
+    activity.endTool(event.toolCallId);
+    syncActivity();
+  });
+
+  pi.on("agent_end", () => {
+    activity.endRun();
+    syncActivity();
   });
 
   pi.on("agent_settled", () => {
-    workingAnimationHost.setWorking(false);
+    activity.reset();
+    syncActivity();
+    animationHost.setWorking(false);
   });
 
   pi.on("session_shutdown", () => {
     removeTerminalInputHandler?.();
     removeTerminalInputHandler = undefined;
-    workingAnimationHost.setWorking(false);
-    workingAnimationHost.dispose({ restorePi: true });
+    activity.reset();
+    animationHost.setActivityText(undefined);
+    animationHost.setWorking(false);
+    animationHost.dispose({ restorePi: true });
   });
 
   pi.registerCommand("hush", {
     description:
-      "Hush transcript and working animation: /hush on, thinking, animation <name>, or off.",
+      "Hush transcript and working animation: /hush on, thinking, activity, animation <name>, or off.",
     getArgumentCompletions: getHushArgumentCompletions,
     handler: async (args, ctx) => {
       const argument = args.trim().toLowerCase();
@@ -423,8 +511,29 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+      if (argument === "activity") {
+        activityTextEnabled = current.active ? !activityTextEnabled : true;
+        persistActivityTextEnabled(activityTextEnabled);
+        setPreference(
+          {
+            active: true,
+            thinking: current.active ? current.thinking : false,
+          },
+          ctx,
+          false,
+        );
+        syncActivity();
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Hush activity text: ${activityTextEnabled ? "on" : "off"}`,
+            "info",
+          );
+        }
+        return;
+      }
+
       const selectAnimation = (id: string): void => {
-        const animation = hushWorkingAnimations.get(id);
+        const animation = hushAnimations.get(id);
         if (!animation) {
           if (ctx.hasUI) {
             ctx.ui.notify(`Unknown Hush animation: ${id}`, "warning");
@@ -432,8 +541,8 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const latestPreference = getHushPreference();
-        workingAnimationId = animation.id;
-        persistWorkingAnimationId(animation.id);
+        animationId = animation.id;
+        persistAnimationId(animation.id);
         setPreference(
           {
             active: true,
@@ -450,14 +559,14 @@ export default function (pi: ExtensionAPI) {
       };
 
       if (argument === "animation") {
-        await refreshWorkingAnimations(ctx);
+        await refreshAnimations(ctx);
         if (!ctx.hasUI) return;
-        const choices = hushWorkingAnimations.list().map((animation) => ({
+        const choices = hushAnimations.list().map((animation) => ({
           id: animation.id,
           option: `${animation.id} — ${animation.description}`,
         }));
         const selected = await ctx.ui.select(
-          `Hush animation (current: ${workingAnimationId})`,
+          `Hush animation (current: ${animationId})`,
           choices.map((choice) => choice.option),
         );
         const selectedId = choices.find(
@@ -469,7 +578,7 @@ export default function (pi: ExtensionAPI) {
 
       const animationMatch = argument.match(/^animation\s+([^\s]+)$/);
       if (animationMatch) {
-        await refreshWorkingAnimations(ctx);
+        await refreshAnimations(ctx);
         selectAnimation(animationMatch[1]);
         return;
       }
@@ -481,7 +590,7 @@ export default function (pi: ExtensionAPI) {
 
       if (ctx.hasUI) {
         ctx.ui.notify(
-          "Usage: /hush on | /hush thinking | /hush animation <name> | /hush off",
+          "Usage: /hush on | /hush thinking | /hush activity | /hush animation <name> | /hush off",
           "warning",
         );
       }

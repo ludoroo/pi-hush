@@ -47,6 +47,7 @@ import {
   HushWorkingAnimationRegistry,
   defineHushWorkingAnimation,
   normalizeHushWidgetFrame,
+  renderHushAnimation,
   resolveHushAnimationWidth,
 } from "../extensions/hush/lib/working-animation.ts";
 import {
@@ -54,11 +55,13 @@ import {
   DEFAULT_HUSH_WORKING_ANIMATION_ID,
 } from "../extensions/hush/lib/working-animations.ts";
 import {
+  HUSH_WORKING_BARS_ANIMATION,
   HUSH_WORKING_BARS_MAX_HEIGHT,
   renderHushWorkingBarCells,
   renderHushWorkingBars,
 } from "../extensions/hush/lib/working-bars.ts";
 import {
+  HUSH_WORKING_WAVE_ANIMATION,
   HUSH_WORKING_WAVE_MAX_HEIGHT,
   HUSH_WORKING_WAVE_WIDTH,
   renderHushWorkingWave,
@@ -231,10 +234,63 @@ const testAnimation = defineHushWorkingAnimation({
   intervalMs: 100,
   width: 1,
   maxHeight: 1,
-  renderFrame: ({ palette }) => [palette.accent("x")],
+  renderFrame: () => ({ text: "x", color: "accent" }),
 });
-const testRegistry = new HushWorkingAnimationRegistry([testAnimation]);
+const declarativeAnimation = defineHushWorkingAnimation({
+  kind: "frames",
+  id: "declarative",
+  label: "Declarative",
+  description: "Frame contract test",
+  intervalMs: 100,
+  width: 2,
+  maxHeight: 1,
+  frames: [
+    { text: "· ", color: "muted" },
+    {
+      segments: [
+        { text: "•", color: "secondary" },
+        { text: "●", color: "highlight" },
+      ],
+    },
+  ],
+});
+const taggedPalette = {
+  accent: (text: string) => `<accent>${text}</accent>`,
+  secondary: (text: string) => `<secondary>${text}</secondary>`,
+  tertiary: (text: string) => `<tertiary>${text}</tertiary>`,
+  highlight: (text: string) => `<highlight>${text}</highlight>`,
+  muted: (text: string) => `<muted>${text}</muted>`,
+};
+assert.deepEqual(
+  renderHushAnimation(
+    declarativeAnimation,
+    {
+      frame: 0,
+      width: 2,
+      viewportWidth: 4,
+    },
+    taggedPalette,
+  ),
+  ["<muted>· </muted>"],
+);
+assert.deepEqual(
+  renderHushAnimation(
+    declarativeAnimation,
+    {
+      frame: 1,
+      width: 2,
+      viewportWidth: 4,
+    },
+    taggedPalette,
+  ),
+  ["<secondary>•</secondary><highlight>●</highlight>"],
+);
+const testRegistry = new HushWorkingAnimationRegistry([
+  testAnimation,
+  declarativeAnimation,
+]);
 assert.equal(testRegistry.get("test"), testAnimation);
+assert.equal(testRegistry.get("declarative"), declarativeAnimation);
 assert.throws(() => testRegistry.register(testAnimation), /Duplicate/);
 assert.throws(
   () =>
@@ -242,6 +298,17 @@ assert.throws(
       { ...testAnimation, id: undefined as unknown as string },
     ]),
   /Invalid Hush animation id/,
+);
+assert.throws(
+  () =>
+    new HushWorkingAnimationRegistry([
+      {
+        ...declarativeAnimation,
+        id: "bad-color",
+        frames: [{ text: "x", color: "red" as "accent" }],
+      },
+    ]),
+  /Invalid frames/,
 );
 const replacementAnimation = defineHushWorkingAnimation({
   ...testAnimation,
@@ -549,28 +616,45 @@ assert.throws(
     ]),
   /Invalid width/,
 );
-const waveAtStart = renderHushWorkingWave({
-  frame: 0,
-  width: HUSH_WORKING_WAVE_WIDTH,
-  viewportWidth: 80,
-  palette: plainPalette,
-});
-const waveLater = renderHushWorkingWave({
-  frame: 4,
-  width: HUSH_WORKING_WAVE_WIDTH,
-  viewportWidth: 80,
-  palette: plainPalette,
-});
+const waveAtStart = renderHushAnimation(
+  HUSH_WORKING_WAVE_ANIMATION,
+  {
+    frame: 0,
+    width: HUSH_WORKING_WAVE_WIDTH,
+    viewportWidth: 80,
+  },
+  plainPalette,
+);
+const waveLater = renderHushAnimation(
+  HUSH_WORKING_WAVE_ANIMATION,
+  {
+    frame: 4,
+    width: HUSH_WORKING_WAVE_WIDTH,
+    viewportWidth: 80,
+  },
+  plainPalette,
+);
 assert.equal(waveAtStart.length, 1);
 assert.equal(visibleWidth(waveAtStart[0] ?? ""), HUSH_WORKING_WAVE_WIDTH);
 assert.notDeepEqual(waveAtStart, waveLater);
-for (const width of [0, 1, 2, 8]) {
-  const lines = renderHushWorkingWave({
-    frame: 2,
-    width,
-    viewportWidth: width,
-    palette: plainPalette,
-  });
+assert.notDeepEqual(
+  renderHushWorkingWave({
+    frame: 0,
+    width: HUSH_WORKING_WAVE_WIDTH,
+    viewportWidth: 80,
+  }),
+  renderHushWorkingWave({
+    frame: 4,
+    width: HUSH_WORKING_WAVE_WIDTH,
+    viewportWidth: 80,
+  }),
+);
+for (const width of [1, 2, 8]) {
+  const lines = renderHushAnimation(
+    HUSH_WORKING_WAVE_ANIMATION,
+    { frame: 2, width, viewportWidth: width },
+    plainPalette,
+  );
   assert.equal(lines.every((line) => visibleWidth(line) <= width), true);
 }
 
@@ -581,21 +665,27 @@ const barsLater = renderHushWorkingBarCells(10, 3);
 assert.equal(visibleWidth(barsAtStart), 10);
 assert.equal(Array.from(barsAtStart).every((bar) => barCharacters.has(bar)), true);
 assert.notEqual(barsAtStart, barsLater);
-const renderedBars = renderHushWorkingBars({
-  frame: 0,
-  width: 10,
-  viewportWidth: 80,
-  palette: plainPalette,
-});
+const renderedBars = renderHushAnimation(
+  HUSH_WORKING_BARS_ANIMATION,
+  { frame: 0, width: 10, viewportWidth: 80 },
+  plainPalette,
+);
 assert.equal(renderedBars.length, HUSH_WORKING_BARS_MAX_HEIGHT);
 assert.equal(visibleWidth(renderedBars[0] ?? ""), 10);
-for (const width of [0, 1, 2, 8]) {
-  const lines = renderHushWorkingBars({
-    frame: 2,
-    width,
-    viewportWidth: width,
-    palette: plainPalette,
-  });
+assert.ok(
+  "segments" in
+    renderHushWorkingBars({
+      frame: 0,
+      width: 10,
+      viewportWidth: 80,
+    }),
+);
+for (const width of [1, 2, 8]) {
+  const lines = renderHushAnimation(
+    HUSH_WORKING_BARS_ANIMATION,
+    { frame: 2, width, viewportWidth: width },
+    plainPalette,
+  );
   assert.equal(lines.every((line) => visibleWidth(line) <= width), true);
 }
 

@@ -1,5 +1,7 @@
 import {
   defineHushWorkingAnimation,
+  type HushAnimationColor,
+  type HushAnimationFrame,
   type HushAnimationFrameContext,
 } from "./working-animation.ts";
 
@@ -31,31 +33,30 @@ export function renderHushWorkingBarCells(
   return bars;
 }
 
+function barColor(level: number): HushAnimationColor {
+  if (level === BAR_LEVELS.length - 1) return "highlight";
+  if (level >= 6) return "secondary";
+  if (level >= 4) return "accent";
+  if (level >= 2) return "tertiary";
+  return "muted";
+}
+
 export function renderHushWorkingBars(
   context: HushAnimationFrameContext,
-): string[] {
-  if (context.width === 0) return [];
-
-  let bars = "";
-  for (let column = 0; column < context.width; column += 1) {
-    const level = hushWorkingBarLevel(column, context.frame);
-    const glyph = BAR_LEVELS[level];
-    if (level === BAR_LEVELS.length - 1) {
-      bars += context.palette.highlight(glyph);
-    } else if (level >= 6) {
-      bars += context.palette.secondary(glyph);
-    } else if (level >= 4) {
-      bars += context.palette.accent(glyph);
-    } else if (level >= 2) {
-      bars += context.palette.tertiary(glyph);
-    } else {
-      bars += context.palette.muted(glyph);
-    }
-  }
-  return [bars];
+): HushAnimationFrame {
+  return {
+    segments: Array.from({ length: context.width }, (_, column) => {
+      const level = hushWorkingBarLevel(column, context.frame);
+      return {
+        text: BAR_LEVELS[level],
+        color: barColor(level),
+      };
+    }),
+  };
 }
 
 export const HUSH_WORKING_BARS_ANIMATION = defineHushWorkingAnimation({
+  kind: "procedural",
   id: "bars",
   label: "Equalizer bars",
   description: "Compact equalizer bars coloured by the active theme",

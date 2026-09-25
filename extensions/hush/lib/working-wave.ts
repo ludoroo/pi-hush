@@ -1,5 +1,7 @@
 import {
   defineHushWorkingAnimation,
+  type HushAnimationColor,
+  type HushAnimationFrame,
   type HushAnimationFrameContext,
 } from "./working-animation.ts";
 
@@ -45,35 +47,38 @@ function positiveModulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor;
 }
 
-function paintWaveCell(
-  glyph: string,
+function waveCellColor(
   column: number,
   context: HushAnimationFrameContext,
-): string {
+): HushAnimationColor {
   // Move broad colour bands with the waveform instead of producing a
   // stationary rainbow. Gold occupies only the narrow crest-sized band.
   const phase = positiveModulo(
     column * 2 - context.frame,
     HUSH_WORKING_WAVE_WAVELENGTH,
   );
-  if (phase >= 5 && phase < 8) return context.palette.highlight(glyph);
-  if (phase < 5 || phase >= 20) return context.palette.accent(glyph);
-  if (phase < 14) return context.palette.secondary(glyph);
-  return context.palette.tertiary(glyph);
+  if (phase >= 5 && phase < 8) return "highlight";
+  if (phase < 5 || phase >= 20) return "accent";
+  if (phase < 14) return "secondary";
+  return "tertiary";
 }
 
 export function renderHushWorkingWave(
   context: HushAnimationFrameContext,
-): string[] {
-  if (context.width === 0) return [];
-  const wave = Array.from(
-    renderHushWorkingWaveCells(context.width, context.frame),
-    (glyph, column) => paintWaveCell(glyph, column, context),
-  ).join("");
-  return [wave];
+): HushAnimationFrame {
+  return {
+    segments: Array.from(
+      renderHushWorkingWaveCells(context.width, context.frame),
+      (glyph, column) => ({
+        text: glyph,
+        color: waveCellColor(column, context),
+      }),
+    ),
+  };
 }
 
 export const HUSH_WORKING_WAVE_ANIMATION = defineHushWorkingAnimation({
+  kind: "procedural",
   id: "wave",
   label: "Waveform",
   description: "A compact multi-tone Braille waveform from the active theme",

@@ -43,16 +43,24 @@ export type HushAnimationFrameContext = {
   readonly width: number;
   /** Complete widget width before Hush applies its standard indent. */
   readonly viewportWidth: number;
-  readonly palette: HushAnimationPalette;
 };
 
-/**
- * A temporary working animation rendered through Pi's widget API.
- *
- * Keeping every animation on this single surface lets compact loaders evolve
- * into richer companions without a second lifecycle or rendering contract.
- */
-export type HushWorkingAnimation = {
+export type HushAnimationColor = keyof HushAnimationPalette;
+
+export type HushAnimationFrameSegment = {
+  readonly text: string;
+  /** Defaults to accent. */
+  readonly color?: HushAnimationColor;
+};
+
+export type HushAnimationFrame =
+  | HushAnimationFrameSegment
+  | {
+      /** Segments allow multiple theme colours within one frame. */
+      readonly segments: readonly HushAnimationFrameSegment[];
+    };
+
+type HushAnimationBase = {
   /** Stable preference and command identifier. */
   readonly id: string;
   readonly label: string;
@@ -60,11 +68,28 @@ export type HushWorkingAnimation = {
   readonly intervalMs: number;
   /** Fixed columns, or a viewport ratio with optional column bounds. */
   readonly width: HushAnimationWidth;
-  /** Maximum active rows; renderFrame may return fewer on narrow terminals. */
   readonly maxHeight: number;
   readonly placement?: WidgetPlacement;
-  renderFrame(context: HushAnimationFrameContext): readonly string[];
 };
+
+/** Simple theme-like animation: Hush owns frame selection and colour painting. */
+export type HushFrameAnimation = HushAnimationBase & {
+  readonly kind: "frames";
+  readonly frames: readonly HushAnimationFrame[];
+  readonly renderFrame?: never;
+};
+
+/** Advanced animation that computes the same semantic frame object at runtime. */
+export type HushProceduralAnimation = HushAnimationBase & {
+  readonly kind?: "procedural";
+  readonly frames?: never;
+  renderFrame(context: HushAnimationFrameContext): HushAnimationFrame;
+};
+
+/** A temporary working animation rendered through Pi's widget API. */
+export type HushWorkingAnimation =
+  | HushFrameAnimation
+  | HushProceduralAnimation;
 
 /** Synchronous discovery request shared with other Pi extensions. */
 export type HushAnimationDiscovery = {
@@ -98,11 +123,11 @@ export class HushWorkingAnimationRegistry {
       typeof animation.label !== "string" ||
       animation.label.trim() === "" ||
       typeof animation.description !== "string" ||
-      animation.description.trim() === "" ||
-      typeof animation.renderFrame !== "function"
+      animation.description.trim() === ""
     ) {
       throw new Error(`Invalid Hush animation contract: ${animation.id}`);
     }
+    validateHushAnimationRenderer(animation);
     if (this.#animations.has(animation.id)) {
       throw new Error(`Duplicate Hush animation id: ${animation.id}`);
     }
@@ -132,6 +157,58 @@ export class HushWorkingAnimationRegistry {
 
   list(): HushWorkingAnimation[] {
     return [...this.#animations.values()];
+  }
+}
+
+const HUSH_ANIMATION_COLORS = new Set<HushAnimationColor>([
+  "accent",
+  "secondary",
+  "tertiary",
+  "highlight",
+  "muted",
+]);
+
+function validFrameSegment(value: unknown): value is HushAnimationFrameSegment {
+  if (!value || typeof value !== "object") return false;
+  const segment = value as Partial<HushAnimationFrameSegment>;
+  return (
+    typeof segment.text === "string" &&
+    segment.text.length > 0 &&
+    !/[\0\r\n]/.test(segment.text) &&
+    (segment.color === undefined || HUSH_ANIMATION_COLORS.has(segment.color))
+  );
+}
+
+function validHushAnimationFrame(value: unknown): value is HushAnimationFrame {
+  if (!value || typeof value !== "object") return false;
+  if (!("segments" in value)) return validFrameSegment(value);
+  const segments = value.segments;
+  return (
+    Array.isArray(segments) &&
+    segments.length > 0 &&
+    segments.every(validFrameSegment)
+  );
+}
+
+function validateHushAnimationRenderer(animation: HushWorkingAnimation): void {
+  const animationId = animation.id;
+  if (animation.kind === "frames") {
+    if (
+      typeof animation.renderFrame === "function" ||
+      !Array.isArray(animation.frames) ||
+      animation.frames.length === 0 ||
+      animation.maxHeight !== 1 ||
+      !animation.frames.every(validHushAnimationFrame)
+    ) {
+      throw new Error(`Invalid frames for Hush animation: ${animationId}`);
+    }
+    return;
+  }
+  if (animation.kind !== undefined && animation.kind !== "procedural") {
+    throw new Error(`Invalid Hush animation kind: ${animationId}`);
+  }
+  if (typeof animation.renderFrame !== "function") {
+    throw new Error(`Invalid Hush animation renderer: ${animationId}`);
   }
 }
 
@@ -180,6 +257,29 @@ export function resolveHushAnimationWidth(
     resolved = Math.min(resolved, width.maxColumns);
   }
   return Math.min(resolved, available);
+}
+
+/** Select or compute one semantic frame, then paint it with the active theme. */
+export function renderHushAnimation(
+  animation: HushWorkingAnimation,
+  context: HushAnimationFrameContext,
+  palette: HushAnimationPalette,
+): readonly string[] {
+  const frame: unknown =
+    animation.kind === "frames"
+      ? animation.frames[context.frame % animation.frames.length]
+      : animation.renderFrame(context);
+  if (!validHushAnimationFrame(frame)) {
+    throw new Error(
+      "renderFrame must return a frame containing valid text and colour roles",
+    );
+  }
+  const segments = "segments" in frame ? frame.segments : [frame];
+  return [
+    segments
+      .map(({ text, color = "accent" }) => palette[color](text))
+      .join(""),
+  ];
 }
 
 /** Enforce the widget contract: at most maxHeight rows, none wider than width. */
@@ -254,12 +354,15 @@ class HushAnimationWidget implements Component {
         viewportWidth - indent,
       );
       if (contentWidth === 0) return [];
-      const lines = this.#animation.renderFrame({
-        frame: this.#state.frame,
-        width: contentWidth,
-        viewportWidth,
-        palette: animationPalette(this.#theme),
-      });
+      const lines = renderHushAnimation(
+        this.#animation,
+        {
+          frame: this.#state.frame,
+          width: contentWidth,
+          viewportWidth,
+        },
+        animationPalette(this.#theme),
+      );
       if (
         !Array.isArray(lines) ||
         !lines.every(

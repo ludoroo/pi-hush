@@ -12,10 +12,15 @@ export {
   HUSH_LOADER_INDENT,
   defineHushWorkingAnimation,
   resolveHushAnimationWidth,
+  type HushAnimationColor,
   type HushAnimationDiscovery,
+  type HushAnimationFrame,
   type HushAnimationFrameContext,
+  type HushAnimationFrameSegment,
   type HushAnimationPalette,
   type HushAnimationWidth,
+  type HushFrameAnimation,
+  type HushProceduralAnimation,
   type HushWorkingAnimation,
 } from "./extensions/hush/lib/working-animation.ts";
 

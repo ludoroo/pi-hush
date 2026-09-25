@@ -172,29 +172,41 @@ An animation is one default-exported TypeScript contract. Drop it into either lo
 
 A one-level `<name>/index.ts` is also discovered, allowing an animation to carry relative modules or assets. JavaScript `.js`/`.mjs` and TypeScript `.ts`/`.mts` are accepted.
 
-### Minimal proportional animation
+### Minimal frame animation
 
 ```ts
 // ~/.pi/agent/hush/animations/spark.ts
-const FRAMES = ["·  ", " • ", "  ●", " • "] as const;
-
 export default {
+  kind: "frames",
   id: "spark",
   label: "Spark",
   description: "A small travelling spark",
   intervalMs: 120,
-  width: { ratio: 0.25, minColumns: 3, maxColumns: 20 },
+  width: 3,
   maxHeight: 1,
 
-  renderFrame({ frame, width, palette }) {
-    const source = FRAMES[frame % FRAMES.length];
-    const visible = Array.from(source).slice(0, width).join("");
-    return [palette.secondary(visible)];
-  },
+  frames: [
+    { text: "·  ", color: "muted" },
+    { text: " • ", color: "secondary" },
+    { text: "  ●", color: "highlight" },
+    { text: " • ", color: "accent" },
+  ],
 };
 ```
 
-No Hush import, registry edit, timer, widget, or Pi API call is required. Hush owns the left indent, mount/unmount lifecycle, timer, clipping, frame continuity, theme updates, and cleanup.
+Each frame associates its text with a semantic Pi theme colour. For multiple colours in one frame, use segments:
+
+```ts
+{
+  segments: [
+    { text: "·", color: "muted" },
+    { text: "•", color: "secondary" },
+    { text: "●", color: "highlight" },
+  ],
+}
+```
+
+No Hush import, renderer, registry edit, timer, widget, or Pi API call is required. Hush selects and colours frames and owns the left indent, mount/unmount lifecycle, timer, clipping, frame continuity, theme updates, and cleanup. An omitted `color` defaults to `accent`.
 
 ### Width
 
@@ -210,14 +222,32 @@ Or size against the available viewport after Hush's indent:
 width: { ratio: 0.35, minColumns: 8, maxColumns: 32 }
 ```
 
-The host resolves and clamps the width before calling `renderFrame()`. Its context contains:
+The host resolves and clamps width before painting and clipping the selected frame. Advanced phase- or width-dependent animations use the same frame object: `kind: "procedural"` replaces the `frames` array with a `renderFrame()` that returns `{ text, color }` or `{ segments }`.
 
-- `frame`: monotonically increasing frame number, frozen while idle.
-- `width`: resolved content width the renderer may use.
-- `viewportWidth`: complete widget width for advanced layouts.
-- `palette`: active-theme painters (`accent`, `secondary`, `tertiary`, `highlight`, `muted`).
+```ts
+export default {
+  kind: "procedural",
+  id: "meter",
+  label: "Meter",
+  description: "A width-aware activity meter",
+  intervalMs: 100,
+  width: { ratio: 0.3, minColumns: 4, maxColumns: 20 },
+  maxHeight: 1,
 
-The registry rejects invalid IDs, intervals, widths, duplicate IDs, and heights outside 1–10. A broken file is reported and skipped without preventing other animations from loading. Project-local modules execute code and are therefore scanned only for trusted projects.
+  renderFrame({ frame, width }) {
+    return {
+      segments: Array.from({ length: width }, (_, column) => ({
+        text: column === frame % width ? "●" : "·",
+        color: column === frame % width ? "highlight" : "muted",
+      })),
+    };
+  },
+};
+```
+
+Procedural animation code never receives the theme palette and never emits styled terminal strings; Hush consumes and paints its semantic frame exactly like a declarative frame.
+
+The registry rejects invalid IDs, intervals, widths, colours, frames, duplicate IDs, and heights outside 1–10. A broken file is reported and skipped without preventing other animations from loading. Project-local modules execute code and are therefore scanned only for trusted projects.
 
 ### Built-ins and published extensions
 
@@ -232,7 +262,7 @@ export default createHushAnimationExtension(animation);
 
 Declare `pi-hush` as a dependency or peer dependency of the animation package so the `pi-hush/animation-api` import resolves within that package's module graph; installing Hush separately from Git does not expose its modules to unrelated packages. The adapter uses the versioned discovery event internally. Drop-in files, repository built-ins, and published packages all use the same contract and automatically participate in selection and persistence.
 
-Test renderers as pure functions at fixed and proportional widths. Assert visible width and row count rather than ANSI byte length or implementation details.
+Test frame order, semantic colours, visible width, and row count rather than ANSI byte length or implementation details.
 
 ## Inspiration and alternative
 

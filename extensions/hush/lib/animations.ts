@@ -3,6 +3,7 @@ import {
   type HushWorkingAnimation,
 } from "./animation.ts";
 import { HUSH_BARS_ANIMATION } from "./bars.ts";
+import { HUSH_CAT_BALL_ANIMATION } from "./cat-ball.ts";
 import { HUSH_FISH_LOOP_ANIMATION } from "./fish-loop.ts";
 import { HUSH_FLOCK_ANIMATION } from "./flock.ts";
 import { HUSH_JUMPING_DOTS_ANIMATION } from "./jumping-dots.ts";
@@ -19,6 +20,7 @@ export const BUILT_IN_HUSH_ANIMATIONS = [
   HUSH_SHOOTING_STAR_ANIMATION,
   HUSH_FLOCK_ANIMATION,
   HUSH_FISH_LOOP_ANIMATION,
+  HUSH_CAT_BALL_ANIMATION,
 ] as const satisfies readonly HushWorkingAnimation[];
 
 /** Create a registry so hosts/tests can add contracts without mutating a singleton. */

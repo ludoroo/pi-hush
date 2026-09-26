@@ -201,6 +201,7 @@ assert.deepEqual(
     "animation shooting-star",
     "animation flock",
     "animation fish-loop",
+    "animation cat-ball",
   ],
 );
 assert.deepEqual(
@@ -580,7 +581,7 @@ installHushToolExecutionLayout();
 assert.equal(DEFAULT_HUSH_ANIMATION_ID, "wave");
 assert.deepEqual(
   BUILT_IN_HUSH_ANIMATIONS.map((animation) => animation.id),
-  ["wave", "bars", "jumping-dots", "shooting-star", "flock", "fish-loop"],
+  ["wave", "bars", "jumping-dots", "shooting-star", "flock", "fish-loop", "cat-ball"],
 );
 assert.equal(
   BUILT_IN_HUSH_ANIMATIONS.every(
@@ -1260,5 +1261,6 @@ await import("./animation-settings-check.ts");
 await import("./fish-check.ts");
 await import("./flock-check.ts");
 await import("./wave-check.ts");
+await import("./cat-ball-check.ts");
 
 console.log("pi-hush self-check: ok");

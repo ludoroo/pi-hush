@@ -323,7 +323,7 @@ try {
   assert.equal(rendering.renderedWidth(100), 29);
   await rendering.run("animation flock");
   await rendering.run("width");
-  assert.match(rendering.notifications.at(-1)?.message ?? "", /auto.*max \d+/i);
+  assert.match(rendering.notifications.at(-1)?.message ?? "", /auto.*100%.*remaining animation space/i);
   await rendering.run("animation fish-loop");
   assert.equal(rendering.renderedWidth(100), 60); // inset + floor(99 * 60%)
 

@@ -7,13 +7,11 @@ import {
 } from "./animation.ts";
 
 export const HUSH_FLOCK_TICK_MS = 100;
+export const HUSH_FLOCK_PASS_DURATION_MS = 12_000;
 export const HUSH_FLOCK_MIN_WIDTH = 10;
-export const HUSH_FLOCK_MAX_WIDTH = 50;
 export const HUSH_FLOCK_MULTI_ROW_MIN_WIDTH = 12;
 
 const TAU = Math.PI * 2;
-const GROUP_SPACING = 70; // Braille dots, independent of the viewport width.
-const FLIGHT_SPEED = 6; // Dots per second, always left to right.
 type Point = readonly [x: number, y: number];
 type Bird = {
   readonly behind: number;
@@ -27,12 +25,9 @@ const FORMATION: readonly Bird[] = [
   { behind: 10, lane: -0.5, phase: 0.9, color: "secondary" },
   { behind: 0, lane: 0, phase: 0, color: "accent" },
 ];
-// A viewport spanning the gap between formations always contains a breast dot,
-// even when the wing tips are edge-on. Smaller canvases use the compact bird.
-const MIN_FLIGHT_WIDTH = Math.max(
-  HUSH_FLOCK_MIN_WIDTH,
-  Math.ceil((GROUP_SPACING - Math.max(...FORMATION.map(({ behind }) => behind))) / 2),
-);
+const FORMATION_SPAN =
+  Math.max(...FORMATION.map(({ behind }) => behind)) -
+  Math.min(...FORMATION.map(({ behind }) => behind));
 
 /** An ongoing stream of formations: birds exit right and new birds enter left. */
 export function renderHushFlock(
@@ -94,7 +89,7 @@ export function renderHushFlock(
     if (bird.behind === 0) put(...point(0, 0), "highlight");
   };
 
-  if (width < MIN_FLIGHT_WIDTH) {
+  if (width < HUSH_FLOCK_MIN_WIDTH) {
     // Too little runway for a formation: retain a visible, flapping silhouette.
     drawBird(
       (pixelWidth - 1) / 2,
@@ -104,13 +99,14 @@ export function renderHushFlock(
       Math.min(1, (pixelWidth - 1) / 7),
     );
   } else {
-    const distance = 20 + (context.elapsedMs / 1_000) * FLIGHT_SPEED;
-    // Enumerate only formations intersecting the viewport. The same group ID
-    // keeps its wing phases across resizes and entry/exit; no on-screen wrap.
-    const firstGroup = Math.ceil((distance - pixelWidth - 34) / GROUP_SPACING);
-    const lastGroup = Math.floor((distance + 4) / GROUP_SPACING);
-    for (let group = firstGroup; group <= lastGroup; group += 1) {
-      const leadX = distance - group * GROUP_SPACING;
+    const flightProgress = context.elapsedMs / HUSH_FLOCK_PASS_DURATION_MS + 0.25;
+    const currentGroup = Math.floor(flightProgress);
+    const stride = pixelWidth + FORMATION_SPAN;
+    // Group identity and wing phase depend only on elapsed time. Resizing changes
+    // the distance covered per pass, so it adjusts speed without restarting or
+    // wrapping a bird across the canvas.
+    for (let group = currentGroup - 1; group <= currentGroup + 1; group += 1) {
+      const leadX = (flightProgress - group) * stride;
       for (const bird of FORMATION) {
         const x = leadX - bird.behind;
         if (x < -4 || x > pixelWidth + 4) continue;
@@ -130,13 +126,9 @@ export const HUSH_FLOCK_ANIMATION = defineHushWorkingAnimation({
   kind: "procedural",
   id: "flock",
   label: "Flock",
-  description: "Fine-dot birds in formation, steadily migrating left to right",
+  description: "Fine-dot flocks with width-aware, left-to-right migration",
   intervalMs: HUSH_FLOCK_TICK_MS,
-  width: {
-    ratio: 0.65,
-    minColumns: HUSH_FLOCK_MIN_WIDTH,
-    maxColumns: HUSH_FLOCK_MAX_WIDTH,
-  },
+  width: { ratio: 1 },
   maxHeight: 2,
   minWidthForMultiRow: HUSH_FLOCK_MULTI_ROW_MIN_WIDTH,
   placement: "aboveEditor",

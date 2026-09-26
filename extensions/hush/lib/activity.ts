@@ -1,5 +1,24 @@
+export type HushActivityPosition = "left" | "right";
+
+export const DEFAULT_HUSH_ACTIVITY_POSITION: HushActivityPosition = "right";
 export const DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED = false;
 export const HUSH_ACTIVITY_TOOL_NAME_MAX_LENGTH = 80;
+
+/** Parse the separate activity-position preference. Malformed input stays safe. */
+export function parseHushActivityPositionPreference(
+  text: string,
+): HushActivityPosition {
+  const normalized = text.trim().toLowerCase();
+  return normalized === "left" || normalized === "right"
+    ? normalized
+    : DEFAULT_HUSH_ACTIVITY_POSITION;
+}
+
+export function serializeHushActivityPositionPreference(
+  position: HushActivityPosition,
+): string {
+  return `${position}\n`;
+}
 
 type HushAssistantPhase = "thinking" | "responding";
 

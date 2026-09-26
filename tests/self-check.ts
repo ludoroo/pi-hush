@@ -4,11 +4,19 @@
  * (or: pi -e ./extensions/hush/index.ts after install smoke)
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as PiCodingAgent from "@earendil-works/pi-coding-agent";
 import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionUIContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
@@ -36,12 +44,16 @@ import {
   hushPresentationIsActive,
   hushThinkingIsVisible,
   DEFAULT_HUSH_PREFERENCE,
+  HUSH_PRESENTATION_EVENT,
   HushPresentationPublisher,
+  type HushPresentationState,
   parseHushPreference,
   serializeHushPreference,
   setHushStockExportRendering,
 } from "../extensions/hush/lib/visibility.ts";
-import { getHushArgumentCompletions } from "../extensions/hush/index.ts";
+import installHush, {
+  getHushArgumentCompletions,
+} from "../extensions/hush/index.ts";
 import {
   HUSH_ANIMATION_MAX_HEIGHT,
   HUSH_LOADER_INDENT,
@@ -54,10 +66,13 @@ import {
   resolveHushAnimationWidth,
 } from "../extensions/hush/lib/animation.ts";
 import {
+  DEFAULT_HUSH_ACTIVITY_POSITION,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
   HushActivityTracker,
+  parseHushActivityPositionPreference,
   parseHushActivityPreference,
   sanitizeHushToolName,
+  serializeHushActivityPositionPreference,
   serializeHushActivityPreference,
 } from "../extensions/hush/lib/activity.ts";
 import {
@@ -162,10 +177,19 @@ assert.equal(parseHushActivityPreference(""), false);
 assert.equal(serializeHushActivityPreference(true), "on\n");
 assert.equal(serializeHushActivityPreference(false), "off\n");
 
+// Activity position is independent and defaults safely on missing/malformed data.
+assert.equal(DEFAULT_HUSH_ACTIVITY_POSITION, "right");
+assert.equal(parseHushActivityPositionPreference("left\n"), "left");
+assert.equal(parseHushActivityPositionPreference(" RIGHT "), "right");
+assert.equal(parseHushActivityPositionPreference("unknown"), "right");
+assert.equal(parseHushActivityPositionPreference(""), "right");
+assert.equal(serializeHushActivityPositionPreference("left"), "left\n");
+assert.equal(serializeHushActivityPositionPreference("right"), "right\n");
+
 // --- command argument completion ---
 assert.deepEqual(
   getHushArgumentCompletions("")?.map((item) => item.value),
-  ["on", "thinking", "activity", "animation", "off"],
+  ["on", "thinking", "activity", "animation", "width", "off"],
 );
 assert.deepEqual(
   getHushArgumentCompletions("thi")?.map((item) => item.value),
@@ -192,8 +216,192 @@ assert.deepEqual(
   getHushArgumentCompletions("act")?.map((item) => item.value),
   ["activity"],
 );
-assert.equal(getHushArgumentCompletions("activity "), null);
+assert.deepEqual(
+  getHushArgumentCompletions("activity ")?.map((item) => item.value),
+  ["activity left", "activity right"],
+);
+assert.deepEqual(
+  getHushArgumentCompletions("activity l")?.map((item) => item.value),
+  ["activity left"],
+);
+assert.deepEqual(
+  getHushArgumentCompletions("activity  R")?.map((item) => item.value),
+  ["activity right"],
+);
+assert.equal(getHushArgumentCompletions("activity left "), null);
+assert.equal(getHushArgumentCompletions("activity position "), null);
 assert.equal(getHushArgumentCompletions("unknown"), null);
+
+// --- activity-position command and persistence integration ---
+const commandPreferenceRoot = mkdtempSync(
+  join(tmpdir(), "pi-hush-activity-position-"),
+);
+const commandAgentDir = join(commandPreferenceRoot, "agent");
+const commandPreferencePath = join(commandPreferenceRoot, "preference");
+const commandAnimationPath = join(commandPreferenceRoot, "animation");
+const commandActivityPath = join(commandPreferenceRoot, "activity");
+const commandActivityPositionPath = join(commandPreferenceRoot, "position");
+mkdirSync(commandAgentDir, { recursive: true });
+writeFileSync(commandPreferencePath, "off\n");
+writeFileSync(commandAnimationPath, "wave\n");
+writeFileSync(commandActivityPath, "off\n");
+
+const preferenceEnvironment = {
+  PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
+  PI_HUSH_PREFERENCE_PATH: process.env.PI_HUSH_PREFERENCE_PATH,
+  PI_HUSH_ANIMATION_PATH: process.env.PI_HUSH_ANIMATION_PATH,
+  PI_HUSH_ACTIVITY_PATH: process.env.PI_HUSH_ACTIVITY_PATH,
+  PI_HUSH_ACTIVITY_POSITION_PATH:
+    process.env.PI_HUSH_ACTIVITY_POSITION_PATH,
+};
+process.env.PI_CODING_AGENT_DIR = commandAgentDir;
+process.env.PI_HUSH_PREFERENCE_PATH = commandPreferencePath;
+process.env.PI_HUSH_ANIMATION_PATH = commandAnimationPath;
+process.env.PI_HUSH_ACTIVITY_PATH = commandActivityPath;
+process.env.PI_HUSH_ACTIVITY_POSITION_PATH = commandActivityPositionPath;
+
+function createHushCommandHarness() {
+  const handlers = new Map<string, (...args: never[]) => unknown>();
+  const presentations: HushPresentationState[] = [];
+  const notifications: Array<{ message: string; level: string }> = [];
+  let hushCommand:
+    | {
+        handler(
+          args: string,
+          ctx: ExtensionCommandContext,
+        ): Promise<void> | void;
+      }
+    | undefined;
+  let toolsExpanded = false;
+  const ui = {
+    notify(message: string, level: string) {
+      notifications.push({ message, level });
+    },
+    setWorkingVisible() {},
+    setHiddenThinkingLabel() {},
+    setStatus() {},
+    getToolsExpanded() {
+      return toolsExpanded;
+    },
+    setToolsExpanded(expanded: boolean) {
+      toolsExpanded = expanded;
+    },
+    onTerminalInput() {
+      return () => {};
+    },
+  } as unknown as ExtensionUIContext;
+  const ctx = {
+    cwd: commandPreferenceRoot,
+    hasUI: true,
+    mode: "rpc",
+    ui,
+    isIdle: () => true,
+    isProjectTrusted: () => false,
+  } as unknown as ExtensionCommandContext;
+  const api = {
+    on(event: string, handler: (...args: never[]) => unknown) {
+      handlers.set(event, handler);
+    },
+    registerCommand(
+      name: string,
+      command: {
+        handler(
+          args: string,
+          ctx: ExtensionCommandContext,
+        ): Promise<void> | void;
+      },
+    ) {
+      if (name === "hush") hushCommand = command;
+    },
+    events: {
+      emit(event: string, data: unknown) {
+        if (event === HUSH_PRESENTATION_EVENT) {
+          presentations.push(data as HushPresentationState);
+        }
+      },
+    },
+  } as unknown as ExtensionAPI;
+  installHush(api);
+
+  return {
+    presentations,
+    notifications,
+    async start() {
+      const handler = handlers.get("session_start") as (
+        event: unknown,
+        ctx: ExtensionCommandContext,
+      ) => Promise<void>;
+      await handler({}, ctx);
+    },
+    async command(args: string) {
+      assert.ok(hushCommand);
+      await hushCommand.handler(args, ctx);
+    },
+  };
+}
+
+try {
+  const firstHarness = createHushCommandHarness();
+  await firstHarness.start();
+  assert.equal(
+    firstHarness.presentations.at(-1)?.activityTextPosition,
+    "right",
+  );
+
+  await firstHarness.command("activity left");
+  assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "left\n");
+  assert.equal(readFileSync(commandPreferencePath, "utf8"), "off\n");
+  assert.equal(readFileSync(commandActivityPath, "utf8"), "off\n");
+  assert.equal(firstHarness.presentations.at(-1)?.active, false);
+  assert.equal(
+    firstHarness.presentations.at(-1)?.activityTextPosition,
+    "left",
+  );
+  assert.match(
+    firstHarness.notifications.at(-1)?.message ?? "",
+    /activity text is off.*\/hush activity/,
+  );
+
+  for (const invalid of ["activity middle", "activity position right"]) {
+    await firstHarness.command(invalid);
+    assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "left\n");
+    assert.equal(firstHarness.presentations.at(-1)?.active, false);
+    assert.match(
+      firstHarness.notifications.at(-1)?.message ?? "",
+      /activity \[left\|right\]/,
+    );
+  }
+
+  const reloadedHarness = createHushCommandHarness();
+  await reloadedHarness.start();
+  assert.equal(
+    reloadedHarness.presentations.at(-1)?.activityTextPosition,
+    "left",
+  );
+  await reloadedHarness.command("activity  RIGHT");
+  assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "right\n");
+  assert.equal(reloadedHarness.presentations.at(-1)?.activityTextPosition, "right");
+  assert.equal(reloadedHarness.presentations.at(-1)?.activityTextEnabled, false);
+  assert.equal(reloadedHarness.presentations.at(-1)?.active, false);
+
+  writeFileSync(commandActivityPositionPath, "diagonal\n");
+  const malformedHarness = createHushCommandHarness();
+  await malformedHarness.start();
+  assert.equal(
+    malformedHarness.presentations.at(-1)?.activityTextPosition,
+    "right",
+  );
+  assert.equal(
+    readFileSync(commandActivityPositionPath, "utf8"),
+    "diagonal\n",
+  );
+} finally {
+  for (const [name, value] of Object.entries(preferenceEnvironment)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  rmSync(commandPreferenceRoot, { recursive: true, force: true });
+}
 
 // --- working activity state ---
 assert.equal(sanitizeHushToolName(" read\n\tfiles "), "read files");
@@ -317,6 +525,29 @@ assert.equal(
   true,
 );
 assert.equal(publishedPresentationStates.length, 2);
+// Older publishers omitted the field; undefined and the default right are equal.
+const backwardCompatiblePublisher = new HushPresentationPublisher();
+assert.equal(
+  backwardCompatiblePublisher.publish(
+    { ...presentationState, activityTextPosition: undefined },
+    () => {},
+  ),
+  true,
+);
+assert.equal(
+  backwardCompatiblePublisher.publish(
+    { ...presentationState, activityTextPosition: "right" },
+    () => {},
+  ),
+  false,
+);
+assert.equal(
+  backwardCompatiblePublisher.publish(
+    { ...presentationState, activityTextPosition: "left" },
+    () => {},
+  ),
+  true,
+);
 presentationPublisher.reset();
 assert.equal(
   presentationPublisher.publish(
@@ -1056,6 +1287,7 @@ for (const width of [1, 8, 40]) {
 
 // Keep the existing entrypoint running the focused behavior suites too.
 await import("./responsive-animation-check.ts");
+await import("./animation-settings-check.ts");
 await import("./fish-check.ts");
 await import("./flock-check.ts");
 

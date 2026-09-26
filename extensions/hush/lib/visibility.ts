@@ -43,6 +43,8 @@ export type HushPresentationState = {
   activityTextEnabled: boolean;
   /** Current visible activity text, when Hush and the option are active. */
   activityText?: string;
+  /** Side of the animation used for activity text. Omitted means right. */
+  activityTextPosition?: import("./activity.ts").HushActivityPosition;
   stockExportRendering: boolean;
 };
 
@@ -56,6 +58,8 @@ function sameHushPresentationState(
     left.workingAnimationId === right.workingAnimationId &&
     left.activityTextEnabled === right.activityTextEnabled &&
     left.activityText === right.activityText &&
+    (left.activityTextPosition ?? "right") ===
+      (right.activityTextPosition ?? "right") &&
     left.stockExportRendering === right.stockExportRendering
   );
 }

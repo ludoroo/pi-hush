@@ -68,6 +68,8 @@ Restart Pi (or `/reload`) after install. Project-local installs require project 
 /hush on                  # Hush on, thinking hidden
 /hush thinking            # Hush on, toggle thinking / CoT
 /hush activity            # Hush on, toggle live activity text
+/hush activity left       # place activity text before the animation
+/hush activity right      # place activity text after the animation (default)
 /hush animation           # choose an animation
 /hush animation wave      # higher-frequency Braille waveform (default)
 /hush animation bars      # compact equalizer bars
@@ -76,12 +78,17 @@ Restart Pi (or `/reload`) after install. Project-local installs require project 
 /hush animation shooting-star # star crossing all available width
 /hush animation flock     # fine-dot migrating birds; at most two rows
 /hush animation fish-loop # responsive fish; at most three rows
+/hush width 28            # set this animation's drawing area to 28 columns
+/hush width 60%           # use 60% of the remaining animation space
+/hush width auto          # remove this animation's width override
 /hush off                 # restore ordinary transcript
 ```
 
-Pi provides nested argument completion after typing `/hush `. Selecting an animation also enables Hush; `/hush off` preserves the animation and activity-text selections for the next `/hush on`.
+Pi provides nested argument completion after typing `/hush `. Selecting an animation also enables Hush; `/hush off` preserves the animation and activity-text selections for the next `/hush on`. Width commands change only the currently selected animation: they do not enable Hush or toggle activity text. Bare `/hush width` reports that animation's current override or built-in default.
 
-Activity text is **off by default**. When enabled, the same row adds a concise, dim summary such as `Thinking…`, `Responding…`, or `Running read…`. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped.
+A width is the animation's **drawing area**, not terminal-character zoom. Fixed values are columns; percentages use the animation space remaining after the one-column inset and any activity-text reservation. An override replaces that animation's built-in preferred width and min/max bounds, then the host clamps it to the remaining space. `/hush width auto` removes only the selected animation's override.
+
+Activity text is **off by default**. When enabled, the same row adds a concise, dim summary such as `Thinking…`, `Responding…`, or `Running read…`. It appears to the right of the animation by default; `/hush activity left|right` changes its side without enabling activity text or Hush. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped. With text on the left, the reserved column is padded on every animation row so changing labels cannot shift the drawing. Width and position changes update the live widget without restarting playback; the existing height budget still applies.
 
 The built-in `wave`, `bars`, `orbit`, `jumping-dots`, and `shooting-star` loaders use one temporary, single-row widget with a one-column inset aligned to Pi's conversation text. The opt-in `fish-loop` uses at most three rows. `flock` draws fine-dot wing silhouettes in at most two rows, with a responsive default width: birds migrate steadily left to right, with new formations entering rather than circling back. Resizing reveals more or less of the same flight without resetting it. Both fall back to one row in small panes; when the pane is too narrow to span the gap between formations, `flock` keeps a single bird flapping in place. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
 
@@ -106,6 +113,10 @@ Missing file → defaults to **on**. Override the path with `PI_HUSH_PREFERENCE_
 The selected animation is stored separately in `~/.pi/agent/hush/selected-animation`, keeping the main Hush preference simple. It defaults to `wave`; override its path with `PI_HUSH_ANIMATION_PATH`.
 
 The activity-text option is stored in `~/.pi/agent/hush/activity-text` as `on` or `off`. A missing or malformed file defaults to `off`; override its path with `PI_HUSH_ACTIVITY_PATH`.
+
+Its position is stored independently in `~/.pi/agent/hush/activity-position` as `left` or `right`, outside the installed package so updates preserve it. Missing or malformed data defaults to `right`; override its path with `PI_HUSH_ACTIVITY_POSITION_PATH`.
+
+Per-animation width overrides are stored in the versioned JSON file `~/.pi/agent/hush/animation-settings.json`, indexed by stable animation ID. It also lives outside the installed package, so package updates preserve it; override its path with `PI_HUSH_ANIMATION_SETTINGS_PATH`. Hush preserves unknown animation IDs and unrelated JSON fields when changing one width. Unreadable, malformed, or newer-version settings produce a warning at startup; Hush uses animation defaults without changing the saved file. Width-setting commands also refuse to overwrite such files.
 
 Preferences are restored on every `session_start` (startup, resume, new, fork, reload).
 
@@ -164,6 +175,7 @@ extensions/hush/
     tool-execution-layout.ts # all tool-row zero-height adapter
     operational-user-layout.ts  # operational user-row zero-height adapter
     animation-preference.ts  # separate animation selection persistence
+    animation-settings.ts    # versioned per-animation width overrides
     animation-loader.ts      # global/project drop-in discovery
     activity.ts              # live status preference and lifecycle tracker
     animation.ts             # widget contract, registry, and lifecycle host

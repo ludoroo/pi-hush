@@ -24,7 +24,9 @@
  *   /hush on                  Hush on, thinking hidden
  *   /hush thinking            Hush on, toggle thinking / CoT
  *   /hush activity            Hush on, toggle live activity text
+ *   /hush activity left|right Place activity text around the animation
  *   /hush animation <name>    Select a working animation
+ *   /hush width 28|60%|auto   Set this animation's drawing width
  *   /hush off                 Hush off
  *
  * Verified against Pi 0.85.1. Adapters probe the exact APIs they patch
@@ -58,16 +60,30 @@ import { installHushAssistantLayout } from "./lib/assistant-layout.ts";
 import { installHushOperationalUserLayout } from "./lib/operational-user-layout.ts";
 import { installHushToolExecutionLayout } from "./lib/tool-execution-layout.ts";
 import {
+  DEFAULT_HUSH_ACTIVITY_POSITION,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
   HushActivityTracker,
+  parseHushActivityPositionPreference,
   parseHushActivityPreference,
+  serializeHushActivityPositionPreference,
   serializeHushActivityPreference,
+  type HushActivityPosition,
 } from "./lib/activity.ts";
 import {
   HUSH_ANIMATION_DISCOVERY_EVENT,
   HushAnimationHost,
   type HushAnimationDiscovery,
+  type HushAnimationWidth,
 } from "./lib/animation.ts";
+import {
+  createHushAnimationSettings,
+  getHushAnimationWidthOverride,
+  parseHushAnimationSettings,
+  parseHushWidthArgument,
+  serializeHushAnimationSettings,
+  updateHushAnimationWidthOverride,
+  type HushAnimationSettings,
+} from "./lib/animation-settings.ts";
 import {
   BUILT_IN_HUSH_ANIMATIONS,
   createHushAnimationRegistry,
@@ -131,6 +147,11 @@ const HUSH_COMMAND_ARGUMENTS: AutocompleteItem[] = [
     description: "Select an animation",
   },
   {
+    value: "width",
+    label: "width",
+    description: "Set the selected animation's drawing width",
+  },
+  {
     value: "off",
     label: "off",
     description: "Disable Hush",
@@ -141,6 +162,33 @@ export function getHushArgumentCompletions(
   argumentPrefix: string,
 ): AutocompleteItem[] | null {
   const prefix = argumentPrefix.trimStart().toLowerCase();
+  const activityPositionMatch = prefix.match(/^activity\s+([^\s]*)$/);
+  if (activityPositionMatch) {
+    const positionPrefix = activityPositionMatch[1];
+    const matches = (["left", "right"] as const)
+      .filter((position) => position.startsWith(positionPrefix))
+      .map((position) => ({
+        value: `activity ${position}`,
+        label: position,
+        description: `Place activity text to the ${position} of the animation`,
+      }));
+    return matches.length > 0 ? matches : null;
+  }
+  const widthMatch = prefix.match(/^width\s+([^\s]*)$/);
+  if (widthMatch) {
+    const widthPrefix = widthMatch[1];
+    const matches = ["auto", "25%", "50%", "75%", "100%"]
+      .filter((value) => value.startsWith(widthPrefix))
+      .map((value) => ({
+        value: `width ${value}`,
+        label: value,
+        description:
+          value === "auto"
+            ? "Use the animation's built-in width"
+            : `${value} of the remaining animation space`,
+      }));
+    return matches.length > 0 ? matches : null;
+  }
   const animationMatch = prefix.match(/^animation\s+([^\s]*)$/);
   if (animationMatch) {
     const animationPrefix = animationMatch[1];
@@ -179,6 +227,8 @@ export default function (pi: ExtensionAPI) {
   let exportRendering = false;
   let animationId = DEFAULT_HUSH_ANIMATION_ID;
   let activityTextEnabled = DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED;
+  let activityTextPosition = DEFAULT_HUSH_ACTIVITY_POSITION;
+  let animationSettings = createHushAnimationSettings();
   let widgetsEnabled = false;
   let removeTerminalInputHandler: (() => void) | undefined;
 
@@ -188,6 +238,11 @@ export default function (pi: ExtensionAPI) {
       animationId,
       widgetsEnabled,
       activityTextEnabled,
+      activityTextPosition,
+      widthOverride: getHushAnimationWidthOverride(
+        animationSettings,
+        animationId,
+      ),
     });
   };
 
@@ -201,6 +256,12 @@ export default function (pi: ExtensionAPI) {
     resolve(hushDir, "selected-animation");
   const activityPreferencePath =
     process.env.PI_HUSH_ACTIVITY_PATH ?? resolve(hushDir, "activity-text");
+  const activityPositionPreferencePath =
+    process.env.PI_HUSH_ACTIVITY_POSITION_PATH ??
+    resolve(hushDir, "activity-position");
+  const animationSettingsPath =
+    process.env.PI_HUSH_ANIMATION_SETTINGS_PATH ??
+    resolve(hushDir, "animation-settings.json");
 
   const loadHushPreference = (): HushPreference => {
     try {
@@ -233,6 +294,48 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  const loadActivityTextPosition = (): HushActivityPosition => {
+    try {
+      return parseHushActivityPositionPreference(
+        readFileSync(activityPositionPreferencePath, "utf8"),
+      );
+    } catch {
+      return DEFAULT_HUSH_ACTIVITY_POSITION;
+    }
+  };
+
+  const readAnimationSettingsForUpdate = (): HushAnimationSettings => {
+    try {
+      return parseHushAnimationSettings(
+        readFileSync(animationSettingsPath, "utf8"),
+      );
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return createHushAnimationSettings();
+      }
+      throw error;
+    }
+  };
+
+  const loadAnimationSettings = (
+    ctx: Pick<ExtensionCommandContext, "hasUI" | "ui">,
+  ): HushAnimationSettings => {
+    try {
+      return readAnimationSettingsForUpdate();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const message = `Could not load Hush animation settings (${animationSettingsPath}); using animation defaults without modifying the file. ${reason}`;
+      if (ctx.hasUI) ctx.ui.notify(message, "warning");
+      else console.error(`pi-hush: ${message}`);
+      return createHushAnimationSettings();
+    }
+  };
+
   const persistText = (path: string, content: string): void => {
     mkdirSync(dirname(path), { recursive: true });
     const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
@@ -261,6 +364,37 @@ export default function (pi: ExtensionAPI) {
       activityPreferencePath,
       serializeHushActivityPreference(enabled),
     );
+  };
+
+  const persistActivityTextPosition = (
+    position: HushActivityPosition,
+  ): void => {
+    persistText(
+      activityPositionPreferencePath,
+      serializeHushActivityPositionPreference(position),
+    );
+  };
+
+  const describeWidth = (width: HushAnimationWidth): string => {
+    if (typeof width === "number") return `${width} columns`;
+    const bounds = [
+      width.minColumns === undefined ? undefined : `min ${width.minColumns}`,
+      width.maxColumns === undefined ? undefined : `max ${width.maxColumns}`,
+    ].filter((bound) => bound !== undefined);
+    const suffix = bounds.length === 0 ? "" : `, ${bounds.join(", ")} columns`;
+    return `${Number((width.ratio * 100).toPrecision(12))}% of remaining animation space${suffix}`;
+  };
+
+  const describeCurrentAnimationWidth = (): string => {
+    const override = getHushAnimationWidthOverride(
+      animationSettings,
+      animationId,
+    );
+    if (override !== undefined) return describeWidth(override);
+    const builtIn = hushAnimations.get(animationId)?.width;
+    return builtIn === undefined
+      ? "auto"
+      : `auto (animation default: ${describeWidth(builtIn)})`;
   };
 
   const refreshAnimations = async (
@@ -342,6 +476,7 @@ export default function (pi: ExtensionAPI) {
       thinking: preference.thinking,
       workingAnimationId: animationId,
       activityTextEnabled,
+      activityTextPosition,
       ...(activityText === undefined ? {} : { activityText }),
       stockExportRendering: exportRendering,
     } satisfies HushPresentationState;
@@ -394,6 +529,8 @@ export default function (pi: ExtensionAPI) {
     exportRendering = false;
     widgetsEnabled = ctx.mode === "tui";
     activityTextEnabled = loadActivityTextEnabled();
+    activityTextPosition = loadActivityTextPosition();
+    animationSettings = loadAnimationSettings(ctx);
     activity.reset();
     if (!ctx.isIdle()) activity.startRun();
 
@@ -487,7 +624,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("hush", {
     description:
-      "Hush transcript and working animation: /hush on, thinking, activity, animation <name>, or off.",
+      "Hush transcript and working animation: /hush on, thinking, activity [left|right], animation <name>, width <columns|percent|auto>, or off.",
     getArgumentCompletions: getHushArgumentCompletions,
     handler: async (args, ctx) => {
       const argument = args.trim().toLowerCase();
@@ -526,6 +663,112 @@ export default function (pi: ExtensionAPI) {
         if (ctx.hasUI) {
           ctx.ui.notify(
             `Hush activity text: ${activityTextEnabled ? "on" : "off"}`,
+            "info",
+          );
+        }
+        return;
+      }
+
+      const activityPositionMatch = argument.match(/^activity\s+(left|right)$/);
+      if (activityPositionMatch) {
+        const position = activityPositionMatch[1] as HushActivityPosition;
+        try {
+          persistActivityTextPosition(position);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          if (ctx.hasUI) {
+            ctx.ui.notify(`Could not save Hush activity position. ${reason}`, "warning");
+          } else {
+            console.error(`pi-hush: could not save activity position. ${reason}`);
+          }
+          return;
+        }
+        activityTextPosition = position;
+        applyAnimationPresentation(ctx.ui);
+        publishPresentationState();
+        if (ctx.hasUI) {
+          const enableHint = activityTextEnabled
+            ? ""
+            : "; activity text is off — use /hush activity to enable it";
+          ctx.ui.notify(
+            `Hush activity position: ${activityTextPosition}${enableHint}`,
+            "info",
+          );
+        }
+        return;
+      }
+
+      if (argument === "width") {
+        try {
+          animationSettings = readAnimationSettingsForUpdate();
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `Could not read Hush width settings. ${reason}`,
+              "warning",
+            );
+          } else {
+            console.error(`pi-hush: could not read animation widths. ${reason}`);
+          }
+          return;
+        }
+        applyAnimationPresentation(ctx.ui);
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Hush width for ${animationId}: ${describeCurrentAnimationWidth()}. Usage: /hush width <columns|percent|auto>`,
+            "info",
+          );
+        }
+        return;
+      }
+
+      const widthMatch = argument.match(/^width\s+(.+)$/);
+      if (widthMatch) {
+        const requestedWidth = parseHushWidthArgument(widthMatch[1]);
+        if (requestedWidth === undefined) {
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              "Invalid Hush width. Use a positive safe integer, a percentage greater than 0 through 100%, or auto.",
+              "warning",
+            );
+          }
+          return;
+        }
+
+        try {
+          // Reload immediately before every mutation so sequential Pi sessions do
+          // not overwrite each other's animation settings.
+          const latestSettings = readAnimationSettingsForUpdate();
+          const nextSettings = updateHushAnimationWidthOverride(
+            latestSettings,
+            animationId,
+            requestedWidth === "auto" ? undefined : requestedWidth,
+          );
+          if (nextSettings !== latestSettings) {
+            persistText(
+              animationSettingsPath,
+              serializeHushAnimationSettings(nextSettings),
+            );
+          }
+          animationSettings = nextSettings;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          if (ctx.hasUI) {
+            ctx.ui.notify(
+              `Could not update Hush width; the settings file was left untouched. ${reason}`,
+              "warning",
+            );
+          } else {
+            console.error(`pi-hush: could not update animation width. ${reason}`);
+          }
+          return;
+        }
+
+        applyAnimationPresentation(ctx.ui);
+        if (ctx.hasUI) {
+          ctx.ui.notify(
+            `Hush width for ${animationId}: ${describeCurrentAnimationWidth()}`,
             "info",
           );
         }
@@ -590,7 +833,7 @@ export default function (pi: ExtensionAPI) {
 
       if (ctx.hasUI) {
         ctx.ui.notify(
-          "Usage: /hush on | /hush thinking | /hush activity | /hush animation <name> | /hush off",
+          "Usage: /hush on | /hush thinking | /hush activity [left|right] | /hush animation <name> | /hush width <columns|percent|auto> | /hush off",
           "warning",
         );
       }

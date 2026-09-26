@@ -53,6 +53,19 @@ for (const text of ["x\ny", "x\ty", "x\x1b[31my", "x\x1b]0;title\x07y", "x\u202e
   assert.equal(line, "ab x y");
   assert.ok(visibleWidth(line) <= 10);
 }
+// Left labels occupy a stable leading column; disabled labels reserve nothing.
+const composeLeft = (activityText: string | undefined, enabled = true) =>
+  composeHushWorkingLine({
+    animationLine: "ab", animationWidth: 4, viewportWidth: 40,
+    activityText, activityTextEnabled: enabled, activityTextPosition: "left",
+  });
+assert.equal(composeLeft("Thinking…"), "Thinking…" + " ".repeat(15) + "ab  ");
+assert.equal(composeLeft("Read…"), "Read…" + " ".repeat(19) + "ab  ");
+assert.equal(composeLeft(undefined), " ".repeat(24) + "ab  ");
+assert.equal(composeLeft("Thinking…", false), "ab");
+for (const activityText of ["x\ny", "x\x1b[31my", "x\u202ey"]) {
+  assert.equal(composeLeft(activityText), "x y" + " ".repeat(21) + "ab  ");
+}
 const directContext = { frame: 0, width: 10, viewportWidth: 10 };
 assert.deepEqual(renderHushAnimation(recorded, directContext, palette), ["", "  x"]);
 assert.deepEqual(normalizeHushWidgetFrame(["", "  x"], 5, 3), ["     ", "  x  ", "     "]);
@@ -105,7 +118,9 @@ let nativeVisible = true;
 let lastContext: HushAnimationRenderContext | undefined;
 let tint = "\x1b[36m";
 const terminal = { rows: 24 };
-const tui = { terminal, requestRender() {} } as unknown as TUI;
+let renderRequests = 0;
+const tui = { terminal, requestRender() { renderRequests += 1; } } as unknown as TUI;
+const plain = (text: string) => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 const theme = { fg: (_role: string, text: string) => `${tint}${text}\x1b[0m` } as unknown as Theme;
 const notifications: string[] = [];
 const ui = {
@@ -137,7 +152,12 @@ const bad = defineHushWorkingAnimation({
   id: "bad",
   renderFrame: (): HushAnimationFrame => ({ rows: [{ text: "\x1b[2J" }] }),
 });
-const host = new HushAnimationHost(new HushAnimationRegistry([recorded, responsive, bad]), "recorded");
+const capped = defineHushWorkingAnimation({
+  ...responsive,
+  id: "capped",
+  width: { ratio: 0.5, minColumns: 12, maxColumns: 20 },
+});
+const host = new HushAnimationHost(new HushAnimationRegistry([recorded, responsive, capped, bad]), "recorded");
 const getWidget = () => {
   assert.ok(mounted);
   return mounted;
@@ -179,6 +199,45 @@ try {
   assert.equal(context().frame, 3);
   assert.equal(advanced.length, 3);
   assert.notDeepEqual(advanced, first);
+
+  const originalTimer = [...timers.keys()][0];
+  const leftSettings = {
+    enabled: true, animationId: "responsive", activityTextEnabled: true,
+    activityTextPosition: "left" as const,
+  };
+  host.apply(ui, leftSettings);
+  const leftRows = widget.render(65).map(plain);
+  assert.equal(leftRows[0].indexOf("z"), 25); // one inset + 24 reserved columns
+  assert.equal(leftRows[1].indexOf("Thinking…"), 1);
+  assert.equal(leftRows[2].trim(), "");
+  assert.deepEqual(leftRows.map(visibleWidth), [65, 65, 65]);
+  assert.equal(context().elapsedMs, 350);
+  assert.equal(getWidget(), widget);
+  assert.deepEqual([...timers.keys()], [originalTimer]);
+  const requestsBeforeNoop = renderRequests;
+  host.apply(ui, leftSettings);
+  assert.equal(renderRequests, requestsBeforeNoop);
+  for (const text of [undefined, "Read…", "Running 長いツール名 very long name…", "x\ny\x1b[31m"]) {
+    host.setActivityText(text);
+    assert.equal(plain(widget.render(65)[0]).indexOf("z"), 25);
+    for (const width of [0, 1, 2, 12, 24, 25, 26, 40, 41, 65, 120]) {
+      const rows = widget.render(width);
+      assert.ok(rows.length <= HUSH_ANIMATION_ROW_BUDGET);
+      assert.ok(rows.every((line) => visibleWidth(line) <= width));
+      assert.ok(rows.every((line) => !/[\r\n]/u.test(line)));
+    }
+  }
+  host.setActivityText("Thinking…");
+  terminal.rows = 16;
+  const leftTwoRows = widget.render(65).map(plain);
+  assert.equal(leftTwoRows[0].indexOf("z"), 25);
+  assert.equal(leftTwoRows[1].indexOf("Thinking…"), 1);
+  terminal.rows = 8;
+  assert.equal(plain(widget.render(65)[0]).indexOf("z"), 25);
+  terminal.rows = 24;
+  host.apply(ui, { enabled: true, animationId: "responsive", activityTextEnabled: true });
+  assert.deepEqual(widget.render(65), advanced);
+  assert.deepEqual([...timers.keys()], [originalTimer]);
 
   widget.render(50);
   assert.equal(context().width, 25);
@@ -236,9 +295,13 @@ try {
   assert.equal(timers.size, 0);
   assert.equal(nativeVisible, true);
   now += 10000;
+  host.apply(ui, { ...leftSettings, widthOverride: 18 });
+  assert.equal(timers.size, 0); // Changing settings while idle must not start playback.
   host.setWorking(true);
   getWidget().render(65);
+  assert.equal(context().width, 18);
   assert.equal(context().elapsedMs, 350); // Idle time is not animation time.
+  host.apply(ui, { enabled: true, animationId: "responsive" });
   tick(50);
   getWidget().render(65);
   assert.equal(context().elapsedMs, 400);
@@ -252,6 +315,14 @@ try {
   assert.equal(recordedSecond.length, 3);
   assert.notDeepEqual(recordedFirst, recordedSecond);
   assert.equal(recordedFirst[1].includes("  x"), true);
+  for (const widthOverride of [1, 6]) {
+    host.apply(ui, { enabled: true, animationId: "recorded", widthOverride });
+    const resized = recordedWidget.render(10).map(plain);
+    assert.equal(resized[0], " y" + " ".repeat(widthOverride - 1));
+    assert.ok(resized.every((row) => visibleWidth(row) === widthOverride + 1));
+    assert.equal(getWidget(), recordedWidget);
+  }
+  host.apply(ui, { enabled: true, animationId: "recorded" });
   terminal.rows = 8;
   // Recorded assets intentionally use stable top-left clipping, not per-frame trimming.
   assert.equal(recordedWidget.render(10).length, 1);
@@ -262,11 +333,54 @@ try {
   getWidget().render(65);
   assert.equal(context().elapsedMs, 400); // Each animation retains its own playback position.
 
-  host.apply(ui, { enabled: true, animationId: "bad" });
+  // Explicit sizing bypasses both default bounds, but not the terminal budget.
+  const cappedSettings = {
+    enabled: true, animationId: "capped", activityTextEnabled: true,
+    activityTextPosition: "left" as const,
+  };
+  host.apply(ui, { ...cappedSettings, widthOverride: 37 });
+  const cappedWidget = getWidget();
+  cappedWidget.render(65);
+  assert.equal(context().width, 37);
+  tick(250);
+  for (const widthOverride of [4, 37, { ratio: 0.6 }, Number.MAX_SAFE_INTEGER]) {
+    host.apply(ui, { ...cappedSettings, widthOverride });
+    cappedWidget.render(65);
+    assert.equal(context().width, typeof widthOverride === "number" ? Math.min(40, widthOverride) : 24);
+    assert.equal(context().height, widthOverride === 4 ? 1 : 3);
+    assert.equal(context().elapsedMs, 250);
+    assert.equal(getWidget(), cappedWidget);
+    assert.equal(timers.size, 1);
+    for (const viewport of [1, 20, 25, 26, 40, 65, 105]) {
+      assert.ok(cappedWidget.render(viewport).every((row) => visibleWidth(row) <= viewport));
+    }
+  }
+  host.apply(ui, { ...cappedSettings, widthOverride: { ratio: 0.6 } });
+  cappedWidget.render(105);
+  assert.equal(context().width, 48); // percent of 104 - 24 available columns
+  const beforeEqualWidth = renderRequests;
+  host.apply(ui, { ...cappedSettings, widthOverride: { ratio: 0.6 } });
+  assert.equal(renderRequests, beforeEqualWidth);
+  host.apply(ui, cappedSettings); // auto restores built-in ratio/min/max
+  cappedWidget.render(105);
+  assert.equal(context().width, 20);
+  assert.equal(context().elapsedMs, 250);
+  assert.equal(getWidget(), cappedWidget);
+  assert.throws(() => host.apply(ui, { ...cappedSettings, widthOverride: 0 }), /Invalid width/);
+  assert.equal(getWidget(), cappedWidget);
+
+  host.apply(ui, { enabled: true, animationId: "bad", widthOverride: 1 });
   assert.deepEqual(getWidget().render(65), []);
   await Promise.resolve();
   assert.equal(notifications.length, 1);
-  assert.ok(getWidget().render(65).length > 0);
+  const fallbackRows = getWidget().render(65);
+  assert.deepEqual(fallbackRows.map(visibleWidth), [65, 65, 65]); // no failed override leak
+  const fallbackWidget = getWidget();
+  host.retryFailedAnimations(); // discovery can await I/O while this fallback stays mounted
+  host.setActivityText("x");
+  host.apply(ui, { enabled: true, animationId: "bad", widthOverride: 2 });
+  assert.equal(getWidget(), fallbackWidget);
+  assert.deepEqual(fallbackWidget.render(65).map(visibleWidth), [65, 65, 65]);
   assert.equal(timers.size, 1);
   assert.equal(nativeVisible, false);
 } finally {

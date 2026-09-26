@@ -71,9 +71,8 @@ Restart Pi (or `/reload`) after install. Project-local installs require project 
 /hush activity left       # place activity text before the animation
 /hush activity right      # place activity text after the animation (default)
 /hush animation           # choose an animation
-/hush animation wave      # higher-frequency Braille waveform (default)
+/hush animation wave      # organic Braille swells and ripples (default)
 /hush animation bars      # compact equalizer bars
-/hush animation orbit     # satellite orbiting a central body
 /hush animation jumping-dots # three hollow dots passing a bounce
 /hush animation shooting-star # star crossing all available width
 /hush animation flock     # fine-dot migrating birds; at most two rows
@@ -90,7 +89,7 @@ A width is the animation's **drawing area**, not terminal-character zoom. Fixed 
 
 Activity text is **off by default**. When enabled, the same row adds a concise, dim summary such as `Thinking…`, `Responding…`, or `Running read…`. It appears to the right of the animation by default; `/hush activity left|right` changes its side without enabling activity text or Hush. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped. With text on the left, the reserved column is padded on every animation row so changing labels cannot shift the drawing. Width and position changes update the live widget without restarting playback; the existing height budget still applies.
 
-The built-in `wave`, `bars`, `orbit`, `jumping-dots`, and `shooting-star` loaders use one temporary, single-row widget with a one-column inset aligned to Pi's conversation text. The opt-in `fish-loop` uses at most three rows. `flock` draws fine-dot wing silhouettes in at most two rows and uses 100% of the available animation width by default (after reserving activity text). New formations enter as the outgoing flock's last bird reaches the far edge, without circling back. Spacing follows the allocated width; a fixed pass clock preserves progress when resizing, adjusting flight speed to the new distance. Width overrides still take priority. Fish and flock also fall back to one row in small panes; below ten animation columns, `flock` keeps a single bird flapping in place. None of these layout changes restarts playback. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
+The built-in `wave`, `bars`, `jumping-dots`, and `shooting-star` loaders use one temporary, single-row widget with a one-column inset aligned to Pi's conversation text. Wave blends moving swells, uneven crest spacing, and smaller counter-moving ripples instead of repeating a fixed sine curve. High crests brighten and quieter stretches soften, using only the current theme's colours. Its default remains 30 columns and one row; resizing reveals more of the same evolving surface rather than stretching it. The opt-in `fish-loop` uses at most three rows. `flock` draws fine-dot wing silhouettes in at most two rows and uses 100% of the available animation width by default (after reserving activity text). New formations enter as the outgoing flock's last bird reaches the far edge, without circling back. Spacing follows the allocated width; a fixed pass clock preserves progress when resizing, adjusting flight speed to the new distance. Width overrides still take priority. Fish and flock also fall back to one row in small panes; below ten animation columns, `flock` keeps a single bird flapping in place. None of these layout changes restarts playback. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
 
 There are intentionally no bare `/hush`, `/hush thinking off`, or alias forms.
 
@@ -181,9 +180,8 @@ extensions/hush/
     animation.ts             # widget contract, registry, and lifecycle host
     animations.ts            # built-in animation registry
     animation-cells.ts       # grouped semantic-colour cell frames
-    wave.ts                  # higher-frequency Braille waveform
+    wave.ts                  # organic Braille swells and ripples
     bars.ts                  # compact equalizer bars
-    orbit.ts                 # compact projected orbit
     jumping-dots.ts          # three-dot travelling bounce
     shooting-star.ts         # ratio:1 shooting-star reference
     flock.ts                 # compact two-row migrating formations

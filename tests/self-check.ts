@@ -96,10 +96,6 @@ import {
   renderHushJumpingDots,
 } from "../extensions/hush/lib/jumping-dots.ts";
 import {
-  HUSH_ORBIT_ANIMATION,
-  renderHushOrbit,
-} from "../extensions/hush/lib/orbit.ts";
-import {
   HUSH_WAVE_ANIMATION,
   HUSH_WAVE_MAX_HEIGHT,
   HUSH_WAVE_WAVELENGTH,
@@ -201,7 +197,6 @@ assert.deepEqual(
   [
     "animation wave",
     "animation bars",
-    "animation orbit",
     "animation jumping-dots",
     "animation shooting-star",
     "animation flock",
@@ -585,7 +580,7 @@ installHushToolExecutionLayout();
 assert.equal(DEFAULT_HUSH_ANIMATION_ID, "wave");
 assert.deepEqual(
   BUILT_IN_HUSH_ANIMATIONS.map((animation) => animation.id),
-  ["wave", "bars", "orbit", "jumping-dots", "shooting-star", "flock", "fish-loop"],
+  ["wave", "bars", "jumping-dots", "shooting-star", "flock", "fish-loop"],
 );
 assert.equal(
   BUILT_IN_HUSH_ANIMATIONS.every(
@@ -776,6 +771,14 @@ assert.equal(
 assert.equal(
   resolveHushAnimationPreference("cat", testRegistry, "test"),
   "test",
+);
+assert.equal(
+  resolveHushAnimationPreference(
+    "orbit\n",
+    new HushAnimationRegistry(BUILT_IN_HUSH_ANIMATIONS),
+    DEFAULT_HUSH_ANIMATION_ID,
+  ),
+  DEFAULT_HUSH_ANIMATION_ID,
 );
 
 // Theme-like files and one-level index modules are discovered deterministically.
@@ -1073,13 +1076,12 @@ for (const width of [1, 3, HUSH_WAVE_WIDTH]) {
     true,
   );
 }
-const highFrequencyWave = Array.from(
-  renderHushWaveCells(HUSH_WAVE_WIDTH, 0),
-);
+const organicWave = Array.from(renderHushWaveCells(HUSH_WAVE_WIDTH, 0));
 const waveCellsPerCycle = HUSH_WAVE_WAVELENGTH / 2;
-assert.deepEqual(
-  highFrequencyWave.slice(0, waveCellsPerCycle),
-  highFrequencyWave.slice(waveCellsPerCycle, waveCellsPerCycle * 2),
+assert.notDeepEqual(
+  organicWave.slice(0, waveCellsPerCycle),
+  organicWave.slice(waveCellsPerCycle, waveCellsPerCycle * 2),
+  "Adjacent waves are not copies of a fixed sine curve",
 );
 assert.equal(resolveHushAnimationWidth(12, 0), 0);
 assert.equal(resolveHushAnimationWidth(12, 8), 8);
@@ -1178,39 +1180,6 @@ for (const width of [1, 2, 8]) {
   assert.equal(lines.every((line) => visibleWidth(line) <= width), true);
 }
 
-// --- compact orbit ---
-const orbitAtStart = renderHushAnimation(
-  HUSH_ORBIT_ANIMATION,
-  { frame: 0, width: 9, viewportWidth: 40 },
-  plainPalette,
-);
-const orbitQuarterTurn = renderHushAnimation(
-  HUSH_ORBIT_ANIMATION,
-  { frame: 4, width: 9, viewportWidth: 40 },
-  plainPalette,
-);
-assert.equal(visibleWidth(orbitAtStart[0] ?? ""), 9);
-assert.notDeepEqual(orbitAtStart, orbitQuarterTurn);
-assert.deepEqual(
-  renderHushOrbit({ frame: 4, width: 9, viewportWidth: 40 }),
-  renderHushOrbit({ frame: 4, width: 9, viewportWidth: 40 }),
-);
-const themedOrbit = renderHushAnimation(
-  HUSH_ORBIT_ANIMATION,
-  { frame: 0, width: 9, viewportWidth: 40 },
-  taggedPalette,
-)[0] ?? "";
-assert.equal(themedOrbit.includes("<accent>"), true);
-assert.equal(themedOrbit.includes("<highlight>"), true);
-for (const width of [1, 4, 9]) {
-  const line = renderHushAnimation(
-    HUSH_ORBIT_ANIMATION,
-    { frame: 3, width, viewportWidth: width },
-    plainPalette,
-  )[0] ?? "";
-  assert.equal(visibleWidth(line), width);
-}
-
 // --- compact travelling bounce ---
 assert.deepEqual(HUSH_JUMPING_DOT_LEVELS, ["°", "°", "o", "ₒ", "ₒ", "o"]);
 for (const glyph of new Set(HUSH_JUMPING_DOT_LEVELS)) {
@@ -1290,5 +1259,6 @@ await import("./responsive-animation-check.ts");
 await import("./animation-settings-check.ts");
 await import("./fish-check.ts");
 await import("./flock-check.ts");
+await import("./wave-check.ts");
 
 console.log("pi-hush self-check: ok");

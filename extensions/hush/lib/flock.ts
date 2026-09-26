@@ -8,11 +8,11 @@ import {
 
 export const HUSH_FLOCK_TICK_MS = 100;
 export const HUSH_FLOCK_MIN_WIDTH = 10;
-export const HUSH_FLOCK_MAX_WIDTH = 20;
+export const HUSH_FLOCK_MAX_WIDTH = 50;
 export const HUSH_FLOCK_MULTI_ROW_MIN_WIDTH = 12;
 
 const TAU = Math.PI * 2;
-const GROUP_SPACING = 52; // Braille dots, independent of the viewport width.
+const GROUP_SPACING = 70; // Braille dots, independent of the viewport width.
 const FLIGHT_SPEED = 6; // Dots per second, always left to right.
 type Point = readonly [x: number, y: number];
 type Bird = {
@@ -27,6 +27,12 @@ const FORMATION: readonly Bird[] = [
   { behind: 10, lane: -0.5, phase: 0.9, color: "secondary" },
   { behind: 0, lane: 0, phase: 0, color: "accent" },
 ];
+// A viewport spanning the gap between formations always contains a breast dot,
+// even when the wing tips are edge-on. Smaller canvases use the compact bird.
+const MIN_FLIGHT_WIDTH = Math.max(
+  HUSH_FLOCK_MIN_WIDTH,
+  Math.ceil((GROUP_SPACING - Math.max(...FORMATION.map(({ behind }) => behind))) / 2),
+);
 
 /** An ongoing stream of formations: birds exit right and new birds enter left. */
 export function renderHushFlock(
@@ -88,7 +94,7 @@ export function renderHushFlock(
     if (bird.behind === 0) put(...point(0, 0), "highlight");
   };
 
-  if (width < HUSH_FLOCK_MIN_WIDTH) {
+  if (width < MIN_FLIGHT_WIDTH) {
     // Too little runway for a formation: retain a visible, flapping silhouette.
     drawBird(
       (pixelWidth - 1) / 2,

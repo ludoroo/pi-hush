@@ -44,7 +44,7 @@ assert.equal(
 );
 assert.equal(render(900, 28, 7).length, 2);
 
-for (const width of [1, 2, 5, 9, 10, 11, 12, 17, 28, 40]) {
+for (const width of [1, 2, 5, 9, 10, 11, 12, 17, 18, 19, 20, 21, 28, 40, 50]) {
   for (const height of [1, 2, 3]) {
     // Several formations entering/exiting, plus a long-running session.
     for (const elapsedMs of [...Array.from({ length: 260 }, (_, i) => i * 100), 86_400_000]) {
@@ -59,12 +59,13 @@ for (const width of [1, 2, 5, 9, 10, 11, 12, 17, 28, 40]) {
   }
 }
 
-// Resize reveals more of the same flight, rather than resetting or teleporting it.
+// Resizing a migrating formation reveals the same flight. Very narrow panes
+// deliberately use the compact single bird instead of showing empty gaps.
 for (let elapsedMs = 0; elapsedMs < 20_000; elapsedMs += 350) {
   for (const height of [1, 2]) {
     assert.deepEqual(
-      render(elapsedMs, 12, height),
-      render(elapsedMs, 28, height).map((row) => row.slice(0, 12)),
+      render(elapsedMs, 20, height),
+      render(elapsedMs, 28, height).map((row) => row.slice(0, 20)),
     );
   }
 }

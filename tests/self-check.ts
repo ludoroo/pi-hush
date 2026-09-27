@@ -86,10 +86,6 @@ import {
   renderHushBars,
 } from "../extensions/hush/lib/bars.ts";
 import {
-  HUSH_SHOOTING_STAR_ANIMATION,
-  renderHushShootingStar,
-} from "../extensions/hush/lib/shooting-star.ts";
-import {
   HUSH_JUMPING_DOTS_ANIMATION,
   HUSH_JUMPING_DOT_LEVELS,
   HUSH_JUMPING_DOTS_WIDTH,
@@ -971,7 +967,8 @@ const shootingStarWidget = (():
   | (Component & { dispose?(): void })
   | undefined => hostWidget)();
 assert.ok(shootingStarWidget);
-const shootingStarActivityLine = shootingStarWidget.render(40)[0] ?? "";
+const shootingStarRows = shootingStarWidget.render(40);
+const shootingStarActivityLine = shootingStarRows[Math.floor(shootingStarRows.length / 2)] ?? "";
 assert.equal(visibleWidth(shootingStarActivityLine), 30);
 assert.equal(shootingStarActivityLine.includes("Running read…"), true);
 animationHost.apply(hostUi, {
@@ -1229,38 +1226,13 @@ for (const width of [1, 2, HUSH_JUMPING_DOTS_WIDTH]) {
   assert.equal(visibleWidth(line), width);
 }
 
-// --- ratio:1 shooting-star reference ---
-assert.deepEqual(HUSH_SHOOTING_STAR_ANIMATION.width, { ratio: 1 });
-const shootingStarAtStart = renderHushAnimation(
-  HUSH_SHOOTING_STAR_ANIMATION,
-  { frame: 0, width: 20, viewportWidth: 20 },
-  plainPalette,
-);
-const shootingStarLater = renderHushAnimation(
-  HUSH_SHOOTING_STAR_ANIMATION,
-  { frame: 5, width: 20, viewportWidth: 20 },
-  plainPalette,
-);
-assert.notDeepEqual(shootingStarAtStart, shootingStarLater);
-assert.deepEqual(
-  renderHushShootingStar({ frame: 5, width: 20, viewportWidth: 20 }),
-  renderHushShootingStar({ frame: 5, width: 20, viewportWidth: 20 }),
-);
-for (const width of [1, 8, 40]) {
-  const line = renderHushAnimation(
-    HUSH_SHOOTING_STAR_ANIMATION,
-    { frame: 5, width, viewportWidth: width },
-    plainPalette,
-  )[0] ?? "";
-  assert.equal(visibleWidth(line), width);
-}
-
 // Keep the existing entrypoint running the focused behavior suites too.
 await import("./responsive-animation-check.ts");
 await import("./animation-settings-check.ts");
 await import("./fish-check.ts");
 await import("./flock-check.ts");
 await import("./wave-check.ts");
+await import("./shooting-star-check.ts");
 await import("./cat-ball-check.ts");
 
 console.log("pi-hush self-check: ok");

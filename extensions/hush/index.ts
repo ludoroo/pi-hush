@@ -71,7 +71,7 @@ import {
   BUILT_IN_HUSH_ANIMATIONS,
   createHushAnimationRegistry,
   DEFAULT_HUSH_ANIMATION_ID,
-} from "./lib/animations.ts";
+} from "./animations/index.ts";
 import {
   applyHushPreference,
   HUSH_PRESENTATION_EVENT,

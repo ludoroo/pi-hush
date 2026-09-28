@@ -1,14 +1,14 @@
 import {
   composeHushAnimationCells,
   type HushAnimationCell,
-} from "./animation-cells.ts";
-import { renderHushBrailleRows, type HushBraillePixel } from "./braille.ts";
+} from "../lib/animation-cells.ts";
+import { renderHushBrailleRows, type HushBraillePixel } from "../lib/braille.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationRenderContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_CAT_BALL_TICK_MS = 50;
 export const HUSH_CAT_BALL_DURATION_MS = 14_000;

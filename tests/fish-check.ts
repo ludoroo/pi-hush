@@ -12,7 +12,7 @@ import {
 import {
   HUSH_FISH_LOOP_ANIMATION,
   renderHushFishLoop,
-} from "../extensions/hush/lib/fish-loop.ts";
+} from "../extensions/hush/animations/fish-loop.ts";
 
 const palette: HushAnimationPalette = {
   accent: (text) => text,

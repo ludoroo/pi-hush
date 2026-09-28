@@ -13,7 +13,7 @@ import {
   HUSH_WAVE_WIDTH,
   renderHushWave,
   renderHushWaveCells,
-} from "../extensions/hush/lib/wave.ts";
+} from "../extensions/hush/animations/wave.ts";
 
 const palette: HushAnimationPalette = {
   accent: (text) => text,

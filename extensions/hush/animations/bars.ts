@@ -3,7 +3,7 @@ import {
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationFrameContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_BARS_TICK_MS = 90;
 export const HUSH_BARS_MAX_HEIGHT = 1;

@@ -19,7 +19,7 @@ import {
   type HushConfigPatch,
 } from "../extensions/hush/lib/config.ts";
 import { DEFAULT_HUSH_ACTIVITY_POSITION } from "../extensions/hush/lib/activity.ts";
-import { DEFAULT_HUSH_ANIMATION_ID } from "../extensions/hush/lib/animations.ts";
+import { DEFAULT_HUSH_ANIMATION_ID } from "../extensions/hush/animations/index.ts";
 import { DEFAULT_HUSH_PREFERENCE } from "../extensions/hush/lib/visibility.ts";
 
 const root = mkdtempSync(join(tmpdir(), "pi-hush-config-"));

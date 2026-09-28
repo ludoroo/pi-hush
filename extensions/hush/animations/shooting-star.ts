@@ -1,14 +1,14 @@
 import {
   composeHushAnimationCells,
   type HushAnimationCell,
-} from "./animation-cells.ts";
-import { renderHushBrailleRows, type HushBraillePixel } from "./braille.ts";
+} from "../lib/animation-cells.ts";
+import { renderHushBrailleRows, type HushBraillePixel } from "../lib/braille.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationFrame,
   type HushAnimationFrameContext,
   type HushAnimationRenderContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_SHOOTING_STAR_TICK_MS = 80;
 export const HUSH_SHOOTING_STAR_TAIL_LENGTH = 3;

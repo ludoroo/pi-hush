@@ -13,7 +13,7 @@ import {
   HUSH_CAT_BALL_MULTI_ROW_MIN_WIDTH,
   HUSH_CAT_BALL_TICK_MS,
   renderHushCatBall,
-} from "../extensions/hush/lib/cat-ball.ts";
+} from "../extensions/hush/animations/cat-ball.ts";
 
 const palette: HushAnimationPalette = {
   accent: (text) => text,

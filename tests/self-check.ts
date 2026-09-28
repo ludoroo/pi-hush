@@ -66,19 +66,19 @@ import {
 import {
   BUILT_IN_HUSH_ANIMATIONS,
   DEFAULT_HUSH_ANIMATION_ID,
-} from "../extensions/hush/lib/animations.ts";
+} from "../extensions/hush/animations/index.ts";
 import {
   HUSH_BARS_ANIMATION,
   HUSH_BARS_MAX_HEIGHT,
   renderHushBarCells,
   renderHushBars,
-} from "../extensions/hush/lib/bars.ts";
+} from "../extensions/hush/animations/bars.ts";
 import {
   HUSH_JUMPING_DOTS_ANIMATION,
   HUSH_JUMPING_DOT_LEVELS,
   HUSH_JUMPING_DOTS_WIDTH,
   renderHushJumpingDots,
-} from "../extensions/hush/lib/jumping-dots.ts";
+} from "../extensions/hush/animations/jumping-dots.ts";
 import {
   HUSH_WAVE_ANIMATION,
   HUSH_WAVE_MAX_HEIGHT,
@@ -86,7 +86,7 @@ import {
   HUSH_WAVE_WIDTH,
   renderHushWave,
   renderHushWaveCells,
-} from "../extensions/hush/lib/wave.ts";
+} from "../extensions/hush/animations/wave.ts";
 
 // --- operational markers ---
 const hide = encodeHushHideInput("watcher done");

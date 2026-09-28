@@ -1,10 +1,10 @@
-import { renderHushBrailleRows, type HushBraillePixel } from "./braille.ts";
+import { renderHushBrailleRows, type HushBraillePixel } from "../lib/braille.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationRenderContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_FLOCK_TICK_MS = 100;
 export const HUSH_FLOCK_PASS_DURATION_MS = 12_000;

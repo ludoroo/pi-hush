@@ -1,11 +1,11 @@
-import { composeHushAnimationCells, type HushAnimationCell } from "./animation-cells.ts";
+import { composeHushAnimationCells, type HushAnimationCell } from "../lib/animation-cells.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationFrameContext,
   type HushAnimationRenderContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_WAVE_TICK_MS = 100;
 export const HUSH_WAVE_MAX_HEIGHT = 1;

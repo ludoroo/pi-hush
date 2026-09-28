@@ -1,12 +1,12 @@
 import {
   composeHushAnimationCells,
   type HushAnimationCell,
-} from "./animation-cells.ts";
+} from "../lib/animation-cells.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationFrame,
   type HushAnimationFrameContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_JUMPING_DOTS_TICK_MS = 100;
 export const HUSH_JUMPING_DOTS_WIDTH = 5;

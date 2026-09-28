@@ -25,7 +25,7 @@ import {
   HUSH_ANIMATION_ID_PATTERN,
   type HushAnimationWidth,
 } from "./animation.ts";
-import { DEFAULT_HUSH_ANIMATION_ID } from "./animations.ts";
+import { DEFAULT_HUSH_ANIMATION_ID } from "../animations/index.ts";
 import { parseHiddenInputPrefixes } from "./operational-input.ts";
 import { updateTomlValues } from "./toml-edit.ts";
 import {

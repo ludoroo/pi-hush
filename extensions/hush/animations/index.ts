@@ -1,7 +1,7 @@
 import {
   HushAnimationRegistry,
   type HushWorkingAnimation,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 import { HUSH_BARS_ANIMATION } from "./bars.ts";
 import { HUSH_CAT_BALL_ANIMATION } from "./cat-ball.ts";
 import { HUSH_FISH_LOOP_ANIMATION } from "./fish-loop.ts";

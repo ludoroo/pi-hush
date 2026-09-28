@@ -1,10 +1,10 @@
-import { renderHushBrailleRows, type HushBraillePixel as Pixel } from "./braille.ts";
+import { renderHushBrailleRows, type HushBraillePixel as Pixel } from "../lib/braille.ts";
 import {
   defineHushWorkingAnimation,
   type HushAnimationColor,
   type HushAnimationFrame,
   type HushAnimationRenderContext,
-} from "./animation.ts";
+} from "../lib/animation.ts";
 
 export const HUSH_FISH_LOOP_TICK_MS = 100;
 export const HUSH_FISH_LOOP_DURATION_MS = 7_200;

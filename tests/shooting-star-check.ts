@@ -13,7 +13,7 @@ import {
   HUSH_SHOOTING_STAR_TAIL_LENGTH,
   HUSH_SHOOTING_STAR_TICK_MS,
   renderHushShootingStar,
-} from "../extensions/hush/lib/shooting-star.ts";
+} from "../extensions/hush/animations/shooting-star.ts";
 
 const palette: HushAnimationPalette = {
   accent: (text) => text, secondary: (text) => text, tertiary: (text) => text,

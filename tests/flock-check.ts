@@ -14,7 +14,7 @@ import {
   HUSH_FLOCK_ANIMATION,
   HUSH_FLOCK_PASS_DURATION_MS,
   renderHushFlock,
-} from "../extensions/hush/lib/flock.ts";
+} from "../extensions/hush/animations/flock.ts";
 
 const plainPalette: HushAnimationPalette = {
   accent: (text) => text,

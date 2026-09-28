@@ -23,7 +23,8 @@ export const HUSH_ANIMATION_MAX_HEIGHT = 10;
 export const HUSH_ANIMATION_ROW_BUDGET = 3;
 /** Align Hush output with Pi's conversation text using a compact inset. */
 export const HUSH_LOADER_INDENT = 1;
-const HUSH_ACTIVITY_RESERVE_WIDTH = 24;
+/** Stable activity lane, including its one-column gap when an animation fits. */
+export const HUSH_ACTIVITY_RESERVE_WIDTH = 18;
 
 export type HushAnimationPalette = {
   /** Pi's primary accent token. */

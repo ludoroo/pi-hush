@@ -884,7 +884,7 @@ assert.equal(intervalCallbacks.size, 1);
 assert.equal(hostRenderRequests, rendersBeforeActivityUpdate + 1);
 assert.equal(activityWaveWidget.render(40)[0]?.includes("Running read…"), true);
 
-// Activity keeps 24 columns ahead of even a 100%-width animation.
+// Activity keeps 18 columns ahead of even a 100%-width animation.
 animationHost.apply(hostUi, {
   enabled: true,
   animationId: "shooting-star",
@@ -897,7 +897,7 @@ const shootingStarWidget = (():
 assert.ok(shootingStarWidget);
 const shootingStarRows = shootingStarWidget.render(40);
 const shootingStarActivityLine = shootingStarRows[Math.floor(shootingStarRows.length / 2)] ?? "";
-assert.equal(visibleWidth(shootingStarActivityLine), 30);
+assert.equal(visibleWidth(shootingStarActivityLine), 36);
 assert.equal(shootingStarActivityLine.includes("Running read…"), true);
 animationHost.apply(hostUi, {
   enabled: true,

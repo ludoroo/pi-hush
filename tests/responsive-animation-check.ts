@@ -59,12 +59,18 @@ const composeLeft = (activityText: string | undefined, enabled = true) =>
     animationLine: "ab", animationWidth: 4, viewportWidth: 40,
     activityText, activityTextEnabled: enabled, activityTextPosition: "left",
   });
-assert.equal(composeLeft("Thinking…"), "Thinking…" + " ".repeat(15) + "ab  ");
-assert.equal(composeLeft("Read…"), "Read…" + " ".repeat(19) + "ab  ");
-assert.equal(composeLeft(undefined), " ".repeat(24) + "ab  ");
+assert.equal(composeLeft("Thinking…"), "Thinking…" + " ".repeat(9) + "ab  ");
+assert.equal(composeLeft("Read…"), "Read…" + " ".repeat(13) + "ab  ");
+assert.equal(composeLeft(undefined), " ".repeat(18) + "ab  ");
+for (const label of ["Working…", "Responding…", "Running read +2…", "Running subagent…"]) {
+  assert.equal(composeLeft(label), label.padEnd(18, " ") + "ab  ");
+}
+const longLabel = composeLeft("Running a very long tool name…");
+assert.equal(visibleWidth(longLabel), 22);
+assert.ok(longLabel.endsWith("… ab  "));
 assert.equal(composeLeft("Thinking…", false), "ab");
 for (const activityText of ["x\ny", "x\x1b[31my", "x\u202ey"]) {
-  assert.equal(composeLeft(activityText), "x y" + " ".repeat(21) + "ab  ");
+  assert.equal(composeLeft(activityText), "x y" + " ".repeat(15) + "ab  ");
 }
 const directContext = { frame: 0, width: 10, viewportWidth: 10 };
 assert.deepEqual(renderHushAnimation(recorded, directContext, palette), ["", "  x"]);
@@ -189,7 +195,7 @@ try {
   assert.equal(timers.size, 1);
   const first = widget.render(65);
   assert.equal(first.length, 3);
-  assert.deepEqual(context(), { width: 40, height: 3, viewportWidth: 65, elapsedMs: 0, frame: 0 });
+  assert.deepEqual(context(), { width: 46, height: 3, viewportWidth: 65, elapsedMs: 0, frame: 0 });
   assert.equal(first[0].includes("Thinking…"), false);
   assert.equal(first[1].includes("Thinking…"), true);
   assert.equal(first[2].includes("Thinking…"), false);
@@ -207,7 +213,7 @@ try {
   };
   host.apply(ui, leftSettings);
   const leftRows = widget.render(65).map(plain);
-  assert.equal(leftRows[0].indexOf("z"), 25); // one inset + 24 reserved columns
+  assert.equal(leftRows[0].indexOf("z"), 19); // one inset + 18 reserved columns
   assert.equal(leftRows[1].indexOf("Thinking…"), 1);
   assert.equal(leftRows[2].trim(), "");
   assert.deepEqual(leftRows.map(visibleWidth), [65, 65, 65]);
@@ -219,8 +225,8 @@ try {
   assert.equal(renderRequests, requestsBeforeNoop);
   for (const text of [undefined, "Read…", "Running 長いツール名 very long name…", "x\ny\x1b[31m"]) {
     host.setActivityText(text);
-    assert.equal(plain(widget.render(65)[0]).indexOf("z"), 25);
-    for (const width of [0, 1, 2, 12, 24, 25, 26, 40, 41, 65, 120]) {
+    assert.equal(plain(widget.render(65)[0]).indexOf("z"), 19);
+    for (const width of [0, 1, 2, 12, 18, 19, 20, 24, 25, 26, 40, 41, 65, 120]) {
       const rows = widget.render(width);
       assert.ok(rows.length <= HUSH_ANIMATION_ROW_BUDGET);
       assert.ok(rows.every((line) => visibleWidth(line) <= width));
@@ -230,17 +236,33 @@ try {
   host.setActivityText("Thinking…");
   terminal.rows = 16;
   const leftTwoRows = widget.render(65).map(plain);
-  assert.equal(leftTwoRows[0].indexOf("z"), 25);
+  assert.equal(leftTwoRows[0].indexOf("z"), 19);
   assert.equal(leftTwoRows[1].indexOf("Thinking…"), 1);
   terminal.rows = 8;
-  assert.equal(plain(widget.render(65)[0]).indexOf("z"), 25);
+  assert.equal(plain(widget.render(65)[0]).indexOf("z"), 19);
   terminal.rows = 24;
   host.apply(ui, { enabled: true, animationId: "responsive", activityTextEnabled: true });
   assert.deepEqual(widget.render(65), advanced);
   assert.deepEqual([...timers.keys()], [originalTimer]);
 
+  // A fixed, compact reservation leaves 35 drawing columns at a 54-column
+  // viewport on either side, independent of the current label or its absence.
+  for (const position of ["left", "right"] as const) {
+    host.apply(ui, { ...leftSettings, activityTextPosition: position });
+    for (const label of ["Working…", "Running read +2…", "Running subagent…", undefined]) {
+      host.setActivityText(label);
+      const rows = widget.render(54).map(plain);
+      assert.equal(context().width, 35);
+      assert.equal(context().elapsedMs, 350);
+      assert.equal(getWidget(), widget);
+      assert.deepEqual([...timers.keys()], [originalTimer]);
+      if (label) assert.ok(rows[1].includes(label));
+    }
+  }
+  host.apply(ui, leftSettings);
+  host.setActivityText("Thinking…");
   widget.render(50);
-  assert.equal(context().width, 25);
+  assert.equal(context().width, 31);
   assert.equal(context().elapsedMs, 350);
   assert.equal(context().frame, 3);
   assert.equal(getWidget(), widget);
@@ -256,20 +278,20 @@ try {
   assert.equal(widget.render(65).length, 1);
   assert.equal(context().height, 1);
   terminal.rows = 24;
-  assert.equal(widget.render(35).length, 1);
+  assert.equal(widget.render(29).length, 1);
   assert.equal(context().width, 10);
   assert.equal(context().height, 1);
   assert.equal(context().elapsedMs, 350);
   host.setActivityText(undefined);
-  assert.equal(widget.render(35).length, 1);
+  assert.equal(widget.render(29).length, 1);
   assert.equal(context().width, 10);
   assert.equal(context().height, 1);
-  assert.equal(widget.render(24).length, 1);
+  assert.equal(widget.render(18).length, 1);
   host.setActivityText("Thinking…");
-  assert.equal(widget.render(24).length, 1); // activity alone
+  assert.equal(widget.render(18).length, 1); // activity alone
   assert.equal(visibleWidth(widget.render(1)[0]), 1);
   assert.deepEqual(widget.render(0), []);
-  for (const width of [1, 2, 12, 24, 25, 26, 40, 41, 65, 120]) {
+  for (const width of [1, 2, 12, 18, 19, 20, 24, 25, 26, 40, 41, 65, 120]) {
     const rows = widget.render(width);
     assert.ok(rows.length <= HUSH_ANIMATION_ROW_BUDGET);
     assert.ok(rows.every((line) => visibleWidth(line) <= width));
@@ -346,7 +368,7 @@ try {
   for (const widthOverride of [4, 37, { ratio: 0.6 }, Number.MAX_SAFE_INTEGER]) {
     host.apply(ui, { ...cappedSettings, widthOverride });
     cappedWidget.render(65);
-    assert.equal(context().width, typeof widthOverride === "number" ? Math.min(40, widthOverride) : 24);
+    assert.equal(context().width, typeof widthOverride === "number" ? Math.min(46, widthOverride) : 27);
     assert.equal(context().height, widthOverride === 4 ? 1 : 3);
     assert.equal(context().elapsedMs, 250);
     assert.equal(getWidget(), cappedWidget);
@@ -357,7 +379,7 @@ try {
   }
   host.apply(ui, { ...cappedSettings, widthOverride: { ratio: 0.6 } });
   cappedWidget.render(105);
-  assert.equal(context().width, 48); // percent of 104 - 24 available columns
+  assert.equal(context().width, 51); // percent of 104 - 18 available columns
   const beforeEqualWidth = renderRequests;
   host.apply(ui, { ...cappedSettings, widthOverride: { ratio: 0.6 } });
   assert.equal(renderRequests, beforeEqualWidth);

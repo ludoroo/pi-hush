@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse as parseToml } from "smol-toml";
 import * as PiCodingAgent from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
@@ -26,15 +27,10 @@ import {
   findHushAnimationFiles,
   loadHushAnimationFiles,
 } from "../extensions/hush/lib/animation-loader.ts";
-import {
-  parseHushAnimationPreference,
-  resolveHushAnimationPreference,
-  serializeHushAnimationPreference,
-} from "../extensions/hush/lib/animation-preference.ts";
+import { resolveHushAnimationPreference } from "../extensions/hush/lib/animation-preference.ts";
 import {
   classifyOperationalText,
   encodeHushHideInput,
-  encodeFirstmateOperationalInput,
   isOperationalInput,
   INVISIBLE_SEPARATOR,
 } from "../extensions/hush/lib/operational-input.ts";
@@ -47,8 +43,6 @@ import {
   HUSH_PRESENTATION_EVENT,
   HushPresentationPublisher,
   type HushPresentationState,
-  parseHushPreference,
-  serializeHushPreference,
   setHushStockExportRendering,
 } from "../extensions/hush/lib/visibility.ts";
 import installHush, {
@@ -68,12 +62,6 @@ import {
 import {
   DEFAULT_HUSH_ACTIVITY_POSITION,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
-  HushActivityTracker,
-  parseHushActivityPositionPreference,
-  parseHushActivityPreference,
-  sanitizeHushToolName,
-  serializeHushActivityPositionPreference,
-  serializeHushActivityPreference,
 } from "../extensions/hush/lib/activity.ts";
 import {
   BUILT_IN_HUSH_ANIMATIONS,
@@ -106,22 +94,15 @@ assert.equal(hide.startsWith(`${INVISIBLE_SEPARATOR}HUSH_HIDE:`), true);
 assert.equal(classifyOperationalText(hide), "hush-hide");
 assert.equal(isOperationalInput(hide), true);
 
-const watcher = encodeFirstmateOperationalInput(
-  "watcher",
-  "signal: done\n\nDrain the queue.",
-);
-assert.equal(classifyOperationalText(watcher), "watcher");
-
-const fromFm = encodeFirstmateOperationalInput(
-  "from-firstmate",
-  "status update",
-);
-assert.equal(classifyOperationalText(fromFm), "from-firstmate");
+const customPrefixes = ["[automation] "];
+const watcher = "[automation] signal: done\n\nDrain the queue.";
+assert.equal(classifyOperationalText(watcher), undefined);
+assert.equal(classifyOperationalText(watcher, customPrefixes), "configured-prefix");
 
 // Near misses stay unclassified
 assert.equal(classifyOperationalText("hello captain"), undefined);
 assert.equal(
-  classifyOperationalText("quote: " + watcher),
+  classifyOperationalText("quote: " + watcher, customPrefixes),
   undefined,
 );
 assert.equal(
@@ -133,50 +114,10 @@ assert.equal(
   undefined,
 );
 
-// --- preference parse / serialize ---
-assert.deepEqual(parseHushPreference(""), DEFAULT_HUSH_PREFERENCE);
-assert.deepEqual(parseHushPreference("on"), {
-  active: true,
-  thinking: false,
-});
-assert.deepEqual(parseHushPreference("on thinking"), {
-  active: true,
-  thinking: true,
-});
-assert.deepEqual(parseHushPreference("off"), {
-  active: false,
-  thinking: false,
-});
-assert.equal(serializeHushPreference({ active: true, thinking: false }), "on\n");
-assert.equal(
-  serializeHushPreference({ active: true, thinking: true }),
-  "on thinking\n",
-);
-assert.equal(serializeHushPreference({ active: false, thinking: false }), "off\n");
-
-// Animation selection is separate so the main Hush preference stays simple.
-assert.equal(parseHushAnimationPreference("bars\n"), "bars");
-assert.equal(parseHushAnimationPreference("not valid!"), undefined);
-assert.equal(serializeHushAnimationPreference("bars"), "bars\n");
-assert.throws(() => serializeHushAnimationPreference("not valid!"), /Invalid/);
-
-// Activity text is a separate, default-off preference.
-assert.equal(DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED, false);
-assert.equal(parseHushActivityPreference("on\n"), true);
-assert.equal(parseHushActivityPreference(" OFF "), false);
-assert.equal(parseHushActivityPreference("unknown"), false);
-assert.equal(parseHushActivityPreference(""), false);
-assert.equal(serializeHushActivityPreference(true), "on\n");
-assert.equal(serializeHushActivityPreference(false), "off\n");
-
-// Activity position is independent and defaults safely on missing/malformed data.
-assert.equal(DEFAULT_HUSH_ACTIVITY_POSITION, "right");
-assert.equal(parseHushActivityPositionPreference("left\n"), "left");
-assert.equal(parseHushActivityPositionPreference(" RIGHT "), "right");
-assert.equal(parseHushActivityPositionPreference("unknown"), "right");
-assert.equal(parseHushActivityPositionPreference(""), "right");
-assert.equal(serializeHushActivityPositionPreference("left"), "left\n");
-assert.equal(serializeHushActivityPositionPreference("right"), "right\n");
+// --- configuration defaults ---
+assert.deepEqual(DEFAULT_HUSH_PREFERENCE, { active: true, thinking: false });
+assert.equal(DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED, true);
+assert.equal(DEFAULT_HUSH_ACTIVITY_POSITION, "left");
 
 // --- command argument completion ---
 assert.deepEqual(
@@ -224,33 +165,41 @@ assert.equal(getHushArgumentCompletions("activity left "), null);
 assert.equal(getHushArgumentCompletions("activity position "), null);
 assert.equal(getHushArgumentCompletions("unknown"), null);
 
-// --- activity-position command and persistence integration ---
+// --- activity-position command and unified TOML persistence integration ---
 const commandPreferenceRoot = mkdtempSync(
   join(tmpdir(), "pi-hush-activity-position-"),
 );
 const commandAgentDir = join(commandPreferenceRoot, "agent");
-const commandPreferencePath = join(commandPreferenceRoot, "preference");
-const commandAnimationPath = join(commandPreferenceRoot, "animation");
-const commandActivityPath = join(commandPreferenceRoot, "activity");
-const commandActivityPositionPath = join(commandPreferenceRoot, "position");
-mkdirSync(commandAgentDir, { recursive: true });
-writeFileSync(commandPreferencePath, "off\n");
-writeFileSync(commandAnimationPath, "wave\n");
-writeFileSync(commandActivityPath, "off\n");
+const commandHushDir = join(commandAgentDir, "hush");
+const commandConfigPath = join(commandHushDir, "config.toml");
+mkdirSync(commandHushDir, { recursive: true });
+writeFileSync(
+  commandConfigPath,
+  `# retain this command-test comment
+version = 1
+enabled = false
+thinking = false
+animation = "wave"
+owner = "keep"
 
+[activity]
+enabled = false
+position = "right"
+
+[unknown]
+answer = 42
+`,
+);
 const preferenceEnvironment = {
   PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR,
-  PI_HUSH_PREFERENCE_PATH: process.env.PI_HUSH_PREFERENCE_PATH,
-  PI_HUSH_ANIMATION_PATH: process.env.PI_HUSH_ANIMATION_PATH,
-  PI_HUSH_ACTIVITY_PATH: process.env.PI_HUSH_ACTIVITY_PATH,
-  PI_HUSH_ACTIVITY_POSITION_PATH:
-    process.env.PI_HUSH_ACTIVITY_POSITION_PATH,
+  PI_HUSH_CONFIG_PATH: process.env.PI_HUSH_CONFIG_PATH,
 };
 process.env.PI_CODING_AGENT_DIR = commandAgentDir;
-process.env.PI_HUSH_PREFERENCE_PATH = commandPreferencePath;
-process.env.PI_HUSH_ANIMATION_PATH = commandAnimationPath;
-process.env.PI_HUSH_ACTIVITY_PATH = commandActivityPath;
-process.env.PI_HUSH_ACTIVITY_POSITION_PATH = commandActivityPositionPath;
+process.env.PI_HUSH_CONFIG_PATH = commandConfigPath;
+
+function readCommandConfig(): Record<string, unknown> {
+  return parseToml(readFileSync(commandConfigPath, "utf8"));
+}
 
 function createHushCommandHarness() {
   const handlers = new Map<string, (...args: never[]) => unknown>();
@@ -335,15 +284,41 @@ function createHushCommandHarness() {
 try {
   const firstHarness = createHushCommandHarness();
   await firstHarness.start();
+  assert.equal(firstHarness.presentations.at(-1)?.active, false);
+  assert.equal(firstHarness.presentations.at(-1)?.activityTextEnabled, false);
   assert.equal(
     firstHarness.presentations.at(-1)?.activityTextPosition,
     "right",
   );
 
+  // Each presentation command persists to TOML and survives session reload.
+  await firstHarness.command("on");
+  assert.equal(readCommandConfig().enabled, true);
+  assert.equal(readCommandConfig().thinking, false);
+  await firstHarness.command("thinking");
+  assert.equal(readCommandConfig().enabled, true);
+  assert.equal(readCommandConfig().thinking, true);
+  await firstHarness.start();
+  assert.equal(firstHarness.presentations.at(-1)?.thinking, true);
+  await firstHarness.command("off");
+  assert.equal(readCommandConfig().enabled, false);
+  assert.equal(readCommandConfig().thinking, false);
+  await firstHarness.start();
+  assert.equal(firstHarness.presentations.at(-1)?.active, false);
+
   await firstHarness.command("activity left");
-  assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "left\n");
-  assert.equal(readFileSync(commandPreferencePath, "utf8"), "off\n");
-  assert.equal(readFileSync(commandActivityPath, "utf8"), "off\n");
+  const leftConfig = readCommandConfig() as {
+    enabled: boolean;
+    owner: string;
+    activity: { enabled: boolean; position: string };
+    unknown: { answer: number };
+  };
+  assert.equal(leftConfig.activity.position, "left");
+  assert.equal(leftConfig.activity.enabled, false);
+  assert.equal(leftConfig.enabled, false);
+  assert.equal(leftConfig.owner, "keep");
+  assert.equal(leftConfig.unknown.answer, 42);
+  assert.match(readFileSync(commandConfigPath, "utf8"), /retain this command-test comment/);
   assert.equal(firstHarness.presentations.at(-1)?.active, false);
   assert.equal(
     firstHarness.presentations.at(-1)?.activityTextPosition,
@@ -355,8 +330,9 @@ try {
   );
 
   for (const invalid of ["activity middle", "activity position right"]) {
+    const beforeInvalid = readFileSync(commandConfigPath, "utf8");
     await firstHarness.command(invalid);
-    assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "left\n");
+    assert.equal(readFileSync(commandConfigPath, "utf8"), beforeInvalid);
     assert.equal(firstHarness.presentations.at(-1)?.active, false);
     assert.match(
       firstHarness.notifications.at(-1)?.message ?? "",
@@ -371,22 +347,33 @@ try {
     "left",
   );
   await reloadedHarness.command("activity  RIGHT");
-  assert.equal(readFileSync(commandActivityPositionPath, "utf8"), "right\n");
+  assert.equal(
+    (readCommandConfig().activity as Record<string, unknown>).position,
+    "right",
+  );
   assert.equal(reloadedHarness.presentations.at(-1)?.activityTextPosition, "right");
   assert.equal(reloadedHarness.presentations.at(-1)?.activityTextEnabled, false);
   assert.equal(reloadedHarness.presentations.at(-1)?.active, false);
 
-  writeFileSync(commandActivityPositionPath, "diagonal\n");
-  const malformedHarness = createHushCommandHarness();
-  await malformedHarness.start();
-  assert.equal(
-    malformedHarness.presentations.at(-1)?.activityTextPosition,
-    "right",
-  );
-  assert.equal(
-    readFileSync(commandActivityPositionPath, "utf8"),
-    "diagonal\n",
-  );
+  // Strict mutations reject malformed TOML without changing either live state.
+  const malformedConfig = "enabled = false\n[activity\nposition = 'left'\n";
+  writeFileSync(commandConfigPath, malformedConfig);
+  const stateBeforeFailure = reloadedHarness.presentations.at(-1);
+  await reloadedHarness.command("activity");
+  assert.equal(readFileSync(commandConfigPath, "utf8"), malformedConfig);
+  assert.deepEqual(reloadedHarness.presentations.at(-1), stateBeforeFailure);
+  assert.equal(reloadedHarness.notifications.at(-1)?.level, "warning");
+  assert.match(reloadedHarness.notifications.at(-1)?.message ?? "", /could not|invalid|malformed/i);
+  for (const command of ["on", "off", "thinking"]) {
+    await reloadedHarness.command(command);
+    assert.equal(readFileSync(commandConfigPath, "utf8"), malformedConfig);
+    assert.deepEqual(reloadedHarness.presentations.at(-1), stateBeforeFailure);
+    assert.equal(reloadedHarness.notifications.at(-1)?.level, "warning");
+  }
+  await reloadedHarness.command("activity left");
+  assert.equal(readFileSync(commandConfigPath, "utf8"), malformedConfig);
+  assert.deepEqual(reloadedHarness.presentations.at(-1), stateBeforeFailure);
+  assert.equal(reloadedHarness.notifications.at(-1)?.level, "warning");
 } finally {
   for (const [name, value] of Object.entries(preferenceEnvironment)) {
     if (value === undefined) delete process.env[name];
@@ -394,60 +381,6 @@ try {
   }
   rmSync(commandPreferenceRoot, { recursive: true, force: true });
 }
-
-// --- working activity state ---
-assert.equal(sanitizeHushToolName(" read\n\tfiles "), "read files");
-assert.equal(sanitizeHushToolName("\x1b[31mread\x1b[0m"), "read");
-assert.equal(sanitizeHushToolName("\x1b]0;bad title\x07bash"), "bash");
-assert.equal(
-  sanitizeHushToolName(
-    "\x1b]8;;https://example.com\x1b\\read\x1b]8;;\x1b\\",
-  ),
-  "read",
-);
-assert.equal(sanitizeHushToolName("\x1b]unterminated"), "tool");
-assert.equal(sanitizeHushToolName("\u061c\u202eread\u2066"), "read");
-assert.equal(sanitizeHushToolName("\n\t\x00"), "tool");
-assert.equal(sanitizeHushToolName("x".repeat(100)).length, 80);
-
-const activity = new HushActivityTracker();
-assert.equal(activity.text, undefined);
-activity.startRun();
-assert.equal(activity.text, "Thinking…");
-activity.updateAssistant("thinking_delta");
-assert.equal(activity.text, "Thinking…");
-activity.updateAssistant("text_start");
-assert.equal(activity.text, "Responding…");
-activity.updateAssistant("toolcall_start");
-assert.equal(activity.text, "Thinking…");
-activity.startTool("read-1", "read");
-assert.equal(activity.text, "Running read…");
-activity.startTool("bash-1", "bash");
-activity.startTool("grep-1", "grep");
-assert.equal(activity.text, "Running read +2…");
-activity.startTool("read-1", "ignored duplicate");
-activity.updateAssistant("text_delta");
-assert.equal(activity.text, "Running read +2…");
-activity.endTool("bash-1");
-assert.equal(activity.text, "Running read +1…");
-activity.endTool("unknown");
-assert.equal(activity.text, "Running read +1…");
-activity.endTool("read-1");
-assert.equal(activity.text, "Running grep…");
-activity.endTool("grep-1");
-assert.equal(activity.text, "Thinking…");
-activity.updateAssistant("text_delta");
-assert.equal(activity.text, "Responding…");
-activity.endRun();
-assert.equal(activity.text, "Thinking…");
-activity.startTool("stale", "bash");
-activity.startRun();
-assert.equal(activity.text, "Thinking…");
-activity.reset();
-assert.equal(activity.text, undefined);
-activity.startTurn();
-activity.startTool("orphan", "bash");
-assert.equal(activity.text, undefined);
 
 // --- visibility policy ---
 setHushStockExportRendering(false);
@@ -479,12 +412,6 @@ setHushStockExportRendering(true);
 assert.equal(hushPresentationHides("assistant-tool-call"), false);
 assert.equal(hushPresentationHides("assistant-thinking"), false);
 setHushStockExportRendering(false);
-
-// Default preference is on
-assert.deepEqual(DEFAULT_HUSH_PREFERENCE, {
-  active: true,
-  thinking: false,
-});
 
 // Identical presentation states are emitted once, not once per token delta.
 const presentationPublisher = new HushPresentationPublisher();
@@ -574,7 +501,7 @@ installHushOperationalUserLayout();
 installHushToolExecutionLayout();
 
 // --- working animation contracts ---
-assert.equal(DEFAULT_HUSH_ANIMATION_ID, "wave");
+assert.equal(DEFAULT_HUSH_ANIMATION_ID, "flock");
 assert.deepEqual(
   BUILT_IN_HUSH_ANIMATIONS.map((animation) => animation.id),
   ["wave", "bars", "jumping-dots", "shooting-star", "flock", "fish-loop", "cat-ball"],
@@ -762,8 +689,8 @@ assert.equal(
   "test",
 );
 assert.equal(
-  resolveHushAnimationPreference("  TEST \n", testRegistry, "test"),
-  "test",
+  resolveHushAnimationPreference("  TEST \n", testRegistry, "declarative"),
+  "declarative",
 );
 assert.equal(
   resolveHushAnimationPreference("cat", testRegistry, "test"),
@@ -962,6 +889,7 @@ animationHost.apply(hostUi, {
   enabled: true,
   animationId: "shooting-star",
   activityTextEnabled: true,
+  activityTextPosition: "right",
 });
 const shootingStarWidget = (():
   | (Component & { dispose?(): void })
@@ -1227,6 +1155,9 @@ for (const width of [1, 2, HUSH_JUMPING_DOTS_WIDTH]) {
 }
 
 // Keep the existing entrypoint running the focused behavior suites too.
+await import("./activity-check.ts");
+await import("./config-check.ts");
+await import("./toml-edit-check.ts");
 await import("./responsive-animation-check.ts");
 await import("./animation-settings-check.ts");
 await import("./fish-check.ts");
@@ -1234,5 +1165,7 @@ await import("./flock-check.ts");
 await import("./wave-check.ts");
 await import("./shooting-star-check.ts");
 await import("./cat-ball-check.ts");
+await import("./operational-input-check.ts");
+await import("./hidden-input-prefixes-check.ts");
 
 console.log("pi-hush self-check: ok");

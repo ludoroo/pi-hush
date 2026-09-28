@@ -46,5 +46,9 @@
     "extensions": [
       "./extensions/hush/index.ts"
     ]
+  },
+  "dependencies": {
+    "smol-toml": "1.9.0",
+    "toml-eslint-parser": "0.10.0"
   }
 }

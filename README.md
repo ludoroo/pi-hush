@@ -6,13 +6,13 @@ A quieter way to read [Pi](https://github.com/badlogic/pi-mono) while it works.
 
 ## What stays visible
 
-Hush is **on by default**:
+Hush is **on by default**, with the **flock animation and live activity text on its left**:
 
 | Stays visible | Quietly hidden (presentation only) |
 | --- | --- |
 | Genuine user prompts | Thinking / CoT blocks (unless `/hush thinking`) |
 | Genuine assistant text | All tool shells (built-in and user-defined) |
-| Your selected activity animation, plus optional live status text | Operational user rows marked with `U+2063` envelopes |
+| Your selected activity animation, plus optional live status text | Marked or configured-prefix operational user rows |
 
 Hidden content remains in the session and comes back when you turn Hush off. `/export` and `/share` briefly restore Pi's normal rendering so exported content remains complete.
 
@@ -35,15 +35,17 @@ pi install npm:pi-hush
 
 ### Option C — Local path
 
-From this directory:
+From this directory, install the runtime dependencies before registering the local package:
 
 ```sh
+npm install --ignore-scripts
 pi install /absolute/path/to/pi-hush
 ```
 
 Or install as a path package from anywhere:
 
 ```sh
+npm install --prefix ./path/to/pi-hush --ignore-scripts
 pi install ./path/to/pi-hush
 ```
 
@@ -52,11 +54,16 @@ pi install ./path/to/pi-hush
 ```sh
 mkdir -p ~/.pi/agent/extensions
 cp -R extensions/hush ~/.pi/agent/extensions/hush
+npm install --prefix ~/.pi/agent/extensions/hush --no-save --no-package-lock \
+  smol-toml@1.9.0 toml-eslint-parser@0.10.0
 ```
+
+The TOML dependencies are required for manual copies. Git/npm package installs install them automatically.
 
 ### Option E — One-shot test
 
 ```sh
+npm install --ignore-scripts
 pi -e ./extensions/hush/index.ts
 ```
 
@@ -68,14 +75,14 @@ Restart Pi (or `/reload`) after install. Project-local installs require project 
 /hush on                  # Hush on, thinking hidden
 /hush thinking            # Hush on, toggle thinking / CoT
 /hush activity            # Hush on, toggle live activity text
-/hush activity left       # place activity text before the animation
-/hush activity right      # place activity text after the animation (default)
+/hush activity left       # place activity text before the animation (default)
+/hush activity right      # place activity text after the animation
 /hush animation           # choose an animation
-/hush animation wave      # organic Braille swells and ripples (default)
+/hush animation wave      # organic Braille swells and ripples
 /hush animation bars      # compact equalizer bars
 /hush animation jumping-dots # three hollow dots passing a bounce
 /hush animation shooting-star # shimmering tail; gently falls in taller panes
-/hush animation flock     # fine-dot migrating birds; at most two rows
+/hush animation flock     # fine-dot migrating birds; at most two rows (default)
 /hush animation fish-loop # responsive fish; at most three rows
 /hush animation cat-ball  # a cat chasing and playing with a ball; at most three rows
 /hush width 28            # set this animation's drawing area to 28 columns
@@ -88,68 +95,109 @@ Pi provides nested argument completion after typing `/hush `. Selecting an anima
 
 A width is the animation's **drawing area**, not terminal-character zoom. Fixed values are columns; percentages use the animation space remaining after the one-column inset and any activity-text reservation. An override replaces that animation's built-in preferred width and min/max bounds, then the host clamps it to the remaining space. `/hush width auto` removes only the selected animation's override.
 
-Activity text is **off by default**. When enabled, the same row adds a concise, dim summary such as `Thinking…`, `Responding…`, or `Running read…`. It appears to the right of the animation by default; `/hush activity left|right` changes its side without enabling activity text or Hush. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped. With text on the left, the reserved column is padded on every animation row so changing labels cannot shift the drawing. Width and position changes update the live widget without restarting playback; the existing height budget still applies.
+Activity text is **on by default**, to the **left** of the animation. The same row adds a concise, dim summary such as `Working…`, `Thinking…`, `Responding…`, or `Running read…`. Use `/hush activity` to toggle it; `/hush activity left|right` changes its side without enabling activity text or Hush. Parallel work keeps deterministic start order and adds a count, for example `Running read +2…`. Tool names are sanitized before display. While activity is enabled, it gets a stable reservation of up to 24 columns—even if its label is temporarily absent; the animation is resolved against the remaining width and shrinks or disappears first on narrow terminals. Text is clipped rather than wrapped. With text on the left, the reserved column is padded on every animation row so changing labels cannot shift the drawing. Width and position changes update the live widget without restarting playback; the existing height budget still applies.
+
+Labels distinguish Pi's reported activity automatically—there is no extra setting:
+
+| Label | When it appears |
+| --- | --- |
+| `Thinking…` | Pi is streaming an explicit thinking block |
+| `Working…` | Waiting, preparing tool arguments, between streaming phases, or settling |
+| `Running read…` / `Running read +2…` | Tools are executing; this takes precedence over streaming labels |
+| `Responding…` | Pi is streaming reply text |
+
+If a provider does not report thinking events, Hush uses `Working…` rather than guessing. These labels do not expose thinking content or change the separate `/hush thinking` visibility preference.
 
 The built-in `wave`, `bars`, and `jumping-dots` loaders use one temporary, single-row widget with a one-column inset aligned to Pi's conversation text. Wave blends moving swells, uneven crest spacing, and smaller counter-moving ripples instead of repeating a fixed sine curve. High crests brighten and quieter stretches soften, using only the current theme's colours. Its default remains 30 columns and one row; resizing reveals more of the same evolving surface rather than stretching it.
 
 `shooting-star` fills the available animation width with a bright text star and a short, shimmering Braille tail on a clear background. With at least 12 animation columns and room for two rows, it follows a shallow falling path. Short or narrow panes keep a straight, single-row rendition. The tail flickers through small density changes without leaving a background track, and the last spark stays visible until the next pass begins.
 
-The opt-in `fish-loop` and `cat-ball` use at most three rows. In Cat & Ball, a bouncing ball settles near the middle, a cat catches up and paws at it, then sends it off-screen and follows. The scene repeats on a fixed clock without restarting on resize, and simplifies in small panes. `flock` draws fine-dot wing silhouettes in at most two rows and uses 100% of the available animation width by default (after reserving activity text). New formations enter as the outgoing flock's last bird reaches the far edge, without circling back. Spacing follows the allocated width; a fixed pass clock preserves progress when resizing, adjusting flight speed to the new distance. Width overrides still take priority. Fish and flock also fall back to one row in small panes; below ten animation columns, `flock` keeps a single bird flapping in place. None of these layout changes restarts playback. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. This deliberately dependency-free first step tests the companion experience before introducing sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
+The opt-in `fish-loop` and `cat-ball` use at most three rows. In Cat & Ball, a bouncing ball settles near the middle, a cat catches up and paws at it, then sends it off-screen and follows. The scene repeats on a fixed clock without restarting on resize, and simplifies in small panes. `flock` draws fine-dot wing silhouettes in at most two rows and uses 100% of the available animation width by default (after reserving activity text). New formations enter as the outgoing flock's last bird reaches the far edge, without circling back. Spacing follows the allocated width; a fixed pass clock preserves progress when resizing, adjusting flight speed to the new distance. Width overrides still take priority. Fish and flock also fall back to one row in small panes; below ten animation columns, `flock` keeps a single bird flapping in place. None of these layout changes restarts playback. Activity text sits beside the middle row. Their multi-tone palette comes entirely from the active Pi theme (`accent`, `syntaxVariable`, `syntaxFunction`, `warning`, and `muted`) and updates with theme changes. The widget is mounted only while Pi works, so it leaves no idle reservation or residual blank rows. Animations use terminal text only, without sprites, image protocols, or background processes. The loader replaces Pi's visible `Working... (esc to interrupt)` message while active; Escape still interrupts normally. Hush off restores Pi's native spinner and message.
 
 There are intentionally no bare `/hush`, `/hush thinking off`, or alias forms.
 
-Preference is written to:
+## Configuration
+
+All preferences live in **one TOML 1.0 file**, outside the installed package so updates preserve them:
 
 ```text
-~/.pi/agent/hush/preference
+~/.pi/agent/hush/config.toml
 ```
 
-Contents:
+Override its location with `PI_HUSH_CONFIG_PATH`. Fields are optional; this example shows the global defaults and two optional width overrides:
 
-| File contents | Meaning |
-| --- | --- |
-| `on` | Hush on, thinking hidden (default) |
-| `on thinking` | Hush on, thinking / CoT shown |
-| `off` | Hush off |
+```toml
+version = 1
+enabled = true
+thinking = false
+animation = "flock"
 
-Missing file → defaults to **on**. Override the path with `PI_HUSH_PREFERENCE_PATH`.
+[activity]
+enabled = true
+position = "left"
 
-The selected animation is stored separately in `~/.pi/agent/hush/selected-animation`, keeping the main Hush preference simple. It defaults to `wave`; override its path with `PI_HUSH_ANIMATION_PATH`.
+[transcript]
+hidden_input_prefixes = []
 
-The activity-text option is stored in `~/.pi/agent/hush/activity-text` as `on` or `off`. A missing or malformed file defaults to `off`; override its path with `PI_HUSH_ACTIVITY_PATH`.
+# Optional drawing widths, keyed by animation ID.
+[animations.wave]
+width = 28
 
-Its position is stored independently in `~/.pi/agent/hush/activity-position` as `left` or `right`, outside the installed package so updates preserve it. Missing or malformed data defaults to `right`; override its path with `PI_HUSH_ACTIVITY_POSITION_PATH`.
+[animations.flock]
+width = "60%"
+```
 
-Per-animation width overrides are stored in the versioned JSON file `~/.pi/agent/hush/animation-settings.json`, indexed by stable animation ID. It also lives outside the installed package, so package updates preserve it; override its path with `PI_HUSH_ANIMATION_SETTINGS_PATH`. Hush preserves unknown animation IDs and unrelated JSON fields when changing one width. Unreadable, malformed, or newer-version settings produce a warning at startup; Hush uses animation defaults without changing the saved file. Width-setting commands also refuse to overwrite such files.
+- `/hush` commands update **this same file**. They reread it before each edit, preserve unrelated values, unknown animation IDs, and comments, then save atomically. Width and activity-position commands still change only their own settings and preserve playback.
+- Widths accept positive integer columns, percentage strings such as `"60%"`, or `"auto"` to follow authored defaults. Advanced bounded widths also accept inline tables such as `{ ratio = 0.6, minColumns = 12, maxColumns = 48 }`.
+- A missing file or omitted fields use defaults: Hush on, thinking hidden, `flock`, activity text on/left, no width overrides or custom prefixes. Loading Hush or running a no-op command does not create the file; an actual setting change through `/hush` creates it.
+- Malformed, invalid, unreadable, or newer-version configuration produces a warning and uses defaults, including **no custom prefix hiding**. Commands refuse to overwrite it or change active settings on a failed save. Fix the file and run `/reload`.
+- Preferences are restored on every `session_start`. Startup and `/reload` read the file during extension loading, before restored transcript rows are drawn. Edit the file and run `/reload` to apply manual changes everywhere.
 
-Preferences are restored on every `session_start` (startup, resume, new, fork, reload).
+Only `config.toml` is read or written. Older preference files and their environment overrides are ignored, with no migration or fallback. Saving preserves valid config-file symlinks.
 
 ## Operational rows (optional)
 
-Any text-only user message that begins with one of these envelopes can be zero-height under Hush:
-
-```text
-U+2063HUSH_HIDE: <body>                          # general
-U+2063FIRSTMATE_OP: v1 <kind>: <body>            # firstmate-compatible
-[fm-from-firstmate]U+2063<body>                  # firstmate routing carrier
-```
-
-Helpers:
+The built-in `U+2063HUSH_HIDE: <body>` envelope hides a text-only user row while Hush is on. It requires a nonblank body; the invisible separator is part of the marker. Other extensions can opt in without any integration-specific code:
 
 ```ts
-import {
-  encodeHushHideInput,
-  encodeFirstmateOperationalInput,
-  classifyOperationalText,
-} from "./extensions/hush/lib/operational-input.ts";
+import { encodeHushHideInput } from "./extensions/hush/lib/operational-input.ts";
 
-// In another extension that injects follow-up / watcher text:
 pi.sendUserMessage(encodeHushHideInput("watcher: task finished"), {
   deliverAs: "followUp",
 });
 ```
 
-Near misses stay visible (quoted markers, plain `FIRSTMATE_OP:` without `U+2063`, ordinary text before the marker, image-bearing messages).
+### Configurable hidden-input prefixes
+
+To hide another integration's operational user rows, add literal prefixes under `[transcript]` in the same `config.toml`, then run `/reload`:
+
+```toml
+[transcript]
+hidden_input_prefixes = ["[automation] "]
+```
+
+Edit an existing `[transcript]` section rather than creating a duplicate. This global presentation setting is independent of animation selection.
+
+- Matching is **case-sensitive and starts at the beginning** of the message. Neither the prefix nor the message is trimmed or normalised. Regex syntax has no special meaning; a message equal to a configured prefix also matches. Choose distinctive prefixes: matching text you type yourself will also be hidden.
+- Only **text-only user messages** are eligible. Image-bearing messages, assistant replies, custom messages, and custom entries are not hidden by these rules. Quoted or embedded prefixes do not match unless they actually start the text.
+- An omitted setting or `[]` means **no custom prefixes**. Every entry must be a nonblank string. An invalid entry, malformed TOML, a non-array value, or an unreadable file disables the entire custom list and produces a warning. Invalid configuration is never rewritten. The built-in Hush envelope still works.
+- Rules load at extension startup and `/reload`, before restored messages are drawn. Add, change, or remove prefixes in the same file as your other preferences.
+
+Hush off restores these rows, and exports retain their original content. Hidden messages still reach the model and remain in session history: this is not redaction or an execution filter.
+
+### Firstmate recipe (opt-in)
+
+**Firstmate markers are no longer hidden automatically.** To opt in, use these prefixes in the same settings file:
+
+```toml
+[transcript]
+hidden_input_prefixes = [
+  "\u2063FIRSTMATE_OP: v1 ",
+  "[fm-from-firstmate]\u2063",
+]
+```
+
+TOML double-quoted strings decode `\u2063` to the invisible separator (single-quoted literal strings do not); it must be present in the message for these prefixes to match. The broad `FIRSTMATE_OP: v1 ` prefix includes every kind under that header, including future kinds. Use a narrower prefix such as `"\u2063FIRSTMATE_OP: v1 watcher: "` to hide only watcher inputs. No Firstmate kind list, encoder, or separate adapter is built into Hush.
 
 ## Supported limits
 
@@ -173,13 +221,15 @@ package.json                 # pi package manifest
 extensions/hush/
   index.ts                   # /hush command, tool wrappers, preference
   lib/
+    config.ts                # optional TOML settings, defaults, atomic writes
+    toml-edit.ts              # targeted TOML edits preserving comments/unknown data
     visibility.ts            # presentation policy + preference
-    operational-input.ts     # pure TS marker encode/classify
+    operational-input.ts     # Hush envelope + literal prefix configuration/classification
     assistant-layout.ts      # thinking/CoT presentation adapter
     tool-execution-layout.ts # all tool-row zero-height adapter
     operational-user-layout.ts  # operational user-row zero-height adapter
-    animation-preference.ts  # separate animation selection persistence
-    animation-settings.ts    # versioned per-animation width overrides
+    animation-preference.ts  # animation ID resolution
+    animation-settings.ts    # per-animation width values and updates
     animation-loader.ts      # global/project drop-in discovery
     activity.ts              # live status preference and lifecycle tracker
     animation.ts             # widget contract, registry, and lifecycle host

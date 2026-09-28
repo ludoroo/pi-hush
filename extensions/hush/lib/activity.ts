@@ -1,38 +1,10 @@
 export type HushActivityPosition = "left" | "right";
 
-export const DEFAULT_HUSH_ACTIVITY_POSITION: HushActivityPosition = "right";
-export const DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED = false;
+export const DEFAULT_HUSH_ACTIVITY_POSITION: HushActivityPosition = "left";
+export const DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED = true;
 export const HUSH_ACTIVITY_TOOL_NAME_MAX_LENGTH = 80;
 
-/** Parse the separate activity-position preference. Malformed input stays safe. */
-export function parseHushActivityPositionPreference(
-  text: string,
-): HushActivityPosition {
-  const normalized = text.trim().toLowerCase();
-  return normalized === "left" || normalized === "right"
-    ? normalized
-    : DEFAULT_HUSH_ACTIVITY_POSITION;
-}
-
-export function serializeHushActivityPositionPreference(
-  position: HushActivityPosition,
-): string {
-  return `${position}\n`;
-}
-
-type HushAssistantPhase = "thinking" | "responding";
-
-/** Parse the separate activity-text preference. Malformed input stays quiet. */
-export function parseHushActivityPreference(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  if (normalized === "on") return true;
-  if (normalized === "off") return false;
-  return DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED;
-}
-
-export function serializeHushActivityPreference(enabled: boolean): string {
-  return enabled ? "on\n" : "off\n";
-}
+type HushAssistantPhase = "working" | "thinking" | "responding";
 
 /** Strip terminal sequences and control characters before single-row layout. */
 export function sanitizeHushActivityText(text: string): string {
@@ -63,11 +35,12 @@ export function sanitizeHushToolName(name: string): string {
 
 /**
  * Converts Pi's streaming and parallel-tool lifecycle into one concise label.
+ * Thinking requires explicit thinking events; other busy periods are Working.
  * Tool execution always takes precedence over the assistant streaming phase.
  */
 export class HushActivityTracker {
   #running = false;
-  #phase: HushAssistantPhase = "thinking";
+  #phase: HushAssistantPhase = "working";
   readonly #activeTools = new Map<string, string>();
 
   get text(): string | undefined {
@@ -79,30 +52,46 @@ export class HushActivityTracker {
       const additional = this.#activeTools.size - 1;
       return `Running ${firstTool}${additional > 0 ? ` +${additional}` : ""}…`;
     }
-    return this.#phase === "responding" ? "Responding…" : "Thinking…";
+    if (this.#phase === "thinking") return "Thinking…";
+    return this.#phase === "responding" ? "Responding…" : "Working…";
   }
 
   startRun(): void {
     this.#activeTools.clear();
     this.#running = true;
-    this.#phase = "thinking";
+    this.#phase = "working";
   }
 
   startTurn(): void {
     if (!this.#running) return;
-    this.#phase = "thinking";
+    this.#phase = "working";
   }
 
   updateAssistant(eventType: string): void {
     if (!this.#running) return;
-    if (
-      eventType === "thinking_start" ||
-      eventType === "thinking_delta" ||
-      eventType === "toolcall_start"
-    ) {
-      this.#phase = "thinking";
-    } else if (eventType === "text_start" || eventType === "text_delta") {
-      this.#phase = "responding";
+    switch (eventType) {
+      case "thinking_start":
+      case "thinking_delta":
+        this.#phase = "thinking";
+        break;
+      case "text_start":
+      case "text_delta":
+        this.#phase = "responding";
+        break;
+      case "thinking_end":
+        if (this.#phase === "thinking") this.#phase = "working";
+        break;
+      case "text_end":
+        if (this.#phase === "responding") this.#phase = "working";
+        break;
+      case "start":
+      case "toolcall_start":
+      case "toolcall_delta":
+      case "toolcall_end":
+      case "done":
+      case "error":
+        this.#phase = "working";
+        break;
     }
   }
 
@@ -114,19 +103,19 @@ export class HushActivityTracker {
   }
 
   endTool(toolCallId: string): void {
+    // Reveal the current assistant phase if streaming overlapped this tool.
     this.#activeTools.delete(toolCallId);
-    if (this.#activeTools.size === 0) this.#phase = "thinking";
   }
 
   /** Clear possibly incomplete tools while Pi finishes settling the run. */
   endRun(): void {
     this.#activeTools.clear();
-    if (this.#running) this.#phase = "thinking";
+    if (this.#running) this.#phase = "working";
   }
 
   reset(): void {
     this.#activeTools.clear();
     this.#running = false;
-    this.#phase = "thinking";
+    this.#phase = "working";
   }
 }

@@ -1,41 +1,31 @@
 /**
- * Pure TypeScript operational-input classifier.
- *
- * Compatible with Firstmate's wire form so existing operational rows hide under
- * Hush, plus a simple general marker any extension can use:
- *
- *   Firstmate current:
- *     U+2063 FIRSTMATE_OP: v1 <kind>: <body>
- *     [fm-from-firstmate]U+2063<body>
- *
- *   General (standalone):
- *     U+2063HUSH_HIDE: <body>
+ * Pure TypeScript operational-input configuration and classification.
  *
  * Classification is presentation-only. Messages are never rewritten.
  */
 
 export const INVISIBLE_SEPARATOR = "\u2063";
 
-export const FIRSTMATE_CURRENT_OPERATIONAL_KINDS = [
-  "session-start",
-  "watcher",
-  "turn-end-guard",
-  "away-supervisor",
-  "from-firstmate",
-  "launch-brief",
-] as const;
-
-export type FirstmateCurrentOperationalKind =
-  (typeof FIRSTMATE_CURRENT_OPERATIONAL_KINDS)[number];
-
-const FIRSTMATE_OP_PREFIX = `${INVISIBLE_SEPARATOR}FIRSTMATE_OP: v1 `;
-const FROM_FIRSTMATE_PREFIX = `[fm-from-firstmate]${INVISIBLE_SEPARATOR}`;
 const HUSH_HIDE_PREFIX = `${INVISIBLE_SEPARATOR}HUSH_HIDE:`;
 
-const CURRENT_KIND_SET = new Set<string>(FIRSTMATE_CURRENT_OPERATIONAL_KINDS);
-
-function isCurrentKind(kind: string): kind is FirstmateCurrentOperationalKind {
-  return CURRENT_KIND_SET.has(kind);
+/**
+ * Validate an all-or-nothing list of literal prefixes from configuration.
+ *
+ * Prefix text is preserved exactly. Duplicate entries are removed while
+ * retaining their first position.
+ */
+export function parseHiddenInputPrefixes(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError("hidden input prefixes must be an array");
+  }
+  const prefixes = new Set<string>();
+  for (const prefix of value) {
+    if (typeof prefix !== "string" || prefix.trim().length === 0) {
+      throw new TypeError("hidden input prefixes must be nonblank strings");
+    }
+    prefixes.add(prefix);
+  }
+  return [...prefixes];
 }
 
 /**
@@ -48,56 +38,33 @@ export function encodeHushHideInput(body: string): string {
   return `${HUSH_HIDE_PREFIX} ${text}`;
 }
 
-/**
- * Encode a Firstmate-compatible operational input.
- */
-export function encodeFirstmateOperationalInput(
-  kind: FirstmateCurrentOperationalKind,
-  body: string,
-): string {
-  const text = body.trim();
-  if (!text) throw new Error("operational body must be non-empty");
-  if (kind === "from-firstmate") {
-    return `${FROM_FIRSTMATE_PREFIX}${text}`;
-  }
-  if (!isCurrentKind(kind)) {
-    throw new Error(`unsupported operational kind: ${kind}`);
-  }
-  return `${FIRSTMATE_OP_PREFIX}${kind}: ${text}`;
-}
-
-/**
- * Return a current Firstmate kind, "hush-hide", or undefined.
- * Only used for presentation classification.
- */
-export function classifyOperationalText(content: string): string | undefined {
-  if (!content.includes(INVISIBLE_SEPARATOR)) return undefined;
-
+/** Classify a built-in Hush envelope or a configured literal prefix. */
+export function classifyOperationalText(
+  content: string,
+  prefixes: readonly string[] = [],
+): "hush-hide" | "configured-prefix" | undefined {
   if (content.startsWith(HUSH_HIDE_PREFIX)) {
     const body = content.slice(HUSH_HIDE_PREFIX.length).trimStart();
-    return body ? "hush-hide" : undefined;
+    if (body) return "hush-hide";
   }
 
-  if (content.startsWith(FIRSTMATE_OP_PREFIX)) {
-    const remainder = content.slice(FIRSTMATE_OP_PREFIX.length);
-    const sep = remainder.indexOf(": ");
-    if (sep <= 0) return undefined;
-    const kind = remainder.slice(0, sep);
-    const body = remainder.slice(sep + 2);
-    if (!body || !isCurrentKind(kind) || kind === "from-firstmate") {
-      return undefined;
+  for (const prefix of prefixes) {
+    if (
+      typeof prefix === "string" &&
+      prefix.trim().length > 0 &&
+      content.startsWith(prefix)
+    ) {
+      return "configured-prefix";
     }
-    return kind;
-  }
-
-  if (content.startsWith(FROM_FIRSTMATE_PREFIX) && content.length > FROM_FIRSTMATE_PREFIX.length) {
-    return "from-firstmate";
   }
 
   return undefined;
 }
 
-/** True when the text is a text-only operational envelope Hush may zero-height. */
-export function isOperationalInput(text: string): boolean {
-  return classifyOperationalText(text) !== undefined;
+/** True when the text is an operational input Hush may zero-height. */
+export function isOperationalInput(
+  text: string,
+  prefixes: readonly string[] = [],
+): boolean {
+  return classifyOperationalText(text, prefixes) !== undefined;
 }

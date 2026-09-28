@@ -11,7 +11,7 @@ import { HUSH_SHOOTING_STAR_ANIMATION } from "./shooting-star.ts";
 import { HUSH_WAVE_ANIMATION } from "./wave.ts";
 
 export const DEFAULT_HUSH_ANIMATION_ID =
-  HUSH_WAVE_ANIMATION.id;
+  HUSH_FLOCK_ANIMATION.id;
 
 export const BUILT_IN_HUSH_ANIMATIONS = [
   HUSH_WAVE_ANIMATION,

@@ -1,7 +1,7 @@
 /**
  * Zero-height operational user-row presentation adapter.
  *
- * Verified against Pi 0.81.1–0.82.1 InteractiveMode.addMessageToChat.
+ * Verified against Pi 0.85.1 and 0.87.0 InteractiveMode.addMessageToChat.
  * Probes that exact method and throws if missing so the main extension can
  * skip only this adapter. Changes presentation only — never delivery, role,
  * ordering, or session data.

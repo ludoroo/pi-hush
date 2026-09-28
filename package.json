@@ -26,6 +26,10 @@
   "license": "MIT",
   "files": [
     "extensions",
+    "docs/*.md",
+    "docs/advanced",
+    "docs/assets",
+    "docs/preview.html",
     "README.md",
     "LICENSE",
     "package.json",

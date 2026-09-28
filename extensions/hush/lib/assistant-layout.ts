@@ -1,7 +1,7 @@
 /**
  * Zero-height thinking / CoT presentation adapter.
  *
- * Verified against Pi 0.81.1–0.82.1 exports of AssistantMessageComponent with
+ * Verified against Pi 0.85.1 and 0.87.0 exports of AssistantMessageComponent with
  * updateContent. Probes that exact method and throws if missing so the main
  * extension can skip only this adapter with a diagnostic.
  *

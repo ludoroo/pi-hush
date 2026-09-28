@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="rose">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Hush animation gallery</title>
+<style>
+:root{color-scheme:dark;--bg:#17151f;--panel:#201d2c;--stage:#121019;--ink:#e7e3f5;--soft:#aaa5ba;--border:#3d384e;--accent:#9ccfd8;--secondary:#c4a7e7;--tertiary:#ebbcba;--highlight:#f6c177;--muted:#6e6a86;--font-size:16px;--shadow:0 14px 45px #09080e48}
+[data-theme="night"]{--bg:#0e1624;--panel:#172235;--stage:#09111d;--ink:#e5edf8;--soft:#9aaec8;--border:#31415a;--accent:#7dd3fc;--secondary:#c4b5fd;--tertiary:#86efac;--highlight:#fcd34d;--muted:#64748b}
+[data-theme="paper"]{color-scheme:light;--bg:#f4f0e9;--panel:#fffdf9;--stage:#efebe3;--ink:#302d3a;--soft:#6e687c;--border:#d8d1ca;--accent:#286983;--secondary:#77569b;--tertiary:#a94e69;--highlight:#a86a0d;--muted:#938b99;--shadow:0 14px 45px #554c3d1c}
+*{box-sizing:border-box}
+html{background:var(--bg);overflow-anchor:none}
+body{margin:0;background:radial-gradient(900px 430px at 78% -80px,color-mix(in srgb,var(--secondary) 13%,transparent),transparent 70%),var(--bg);color:var(--ink);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:1360px;margin:auto;padding:34px 28px 42px}
+header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:25px}
+h1{font-size:clamp(26px,3vw,34px);line-height:1.1;letter-spacing:-1.15px;margin:0 0 7px}
+p{margin:0;color:var(--soft)}
+.eyebrow{display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.13em;text-transform:uppercase;margin-bottom:7px}
+.badge{border:1px solid var(--border);border-radius:999px;color:var(--accent);background:color-mix(in srgb,var(--panel) 78%,transparent);padding:7px 13px;white-space:nowrap}
+.controls{position:sticky;top:10px;z-index:10;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:24px;box-shadow:var(--shadow);backdrop-filter:blur(14px)}
+.playback{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+button,select,input[type=number]{font:inherit;background:var(--stage);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:7px 10px}
+button{cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.primary{background:var(--accent);color:var(--bg);border-color:transparent;min-width:76px;font-weight:720}
+.primary:hover{color:var(--bg);filter:brightness(1.08)}
+input[type=range]{accent-color:var(--accent);cursor:pointer}
+#timeline{flex:1;min-width:120px}
+#clock{min-width:76px;font-variant-numeric:tabular-nums;color:var(--soft)}
+.speed{display:flex;align-items:center;gap:6px;color:var(--soft)}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--soft);font-size:13px}
+summary span{color:var(--ink);margin-left:6px}
+.options{display:flex;gap:16px 24px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--border);margin-top:12px}
+.option{display:flex;flex-direction:column;gap:5px;color:var(--soft);font-size:12px}
+.option>div{display:flex;align-items:center;gap:8px}
+.option select{font-size:13px}
+.option input[type=number]{width:68px}
+.option input[type=range]{width:160px}
+.option input[type=number],.option select{min-height:34px}
+.hint{font-size:12px;color:var(--soft);margin-top:10px}
+.gallery{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.card{min-width:0;border:1px solid var(--border);border-radius:14px;background:var(--panel);overflow:hidden;box-shadow:0 7px 25px #0a08141c}
+.card.focused{grid-column:1/-1;border-color:var(--accent)}
+.card.focused .drawing{font-size:calc(var(--font-size)*1.25)}
+.card-head{padding:16px 18px 13px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
+.card h2{font-size:17px;letter-spacing:-.25px;margin:0 0 3px}
+.description{font-size:12px;max-width:480px;line-height:1.5}
+.expand{font-size:12px;padding:5px 9px;flex:none}
+.theatre{background:linear-gradient(180deg,color-mix(in srgb,var(--stage) 94%,var(--accent) 6%),var(--stage));border-top:1px solid var(--border);border-bottom:1px solid var(--border);min-height:130px;display:flex;align-items:center;padding:20px 14px;overflow-x:auto}
+.drawing{flex:none;white-space:pre;font:var(--font-size)/1.32 Menlo,"SFMono-Regular",Consolas,"Liberation Mono",monospace;margin:0;direction:ltr;unicode-bidi:isolate;font-variant-ligatures:none}
+.line{display:block;height:1.32em;line-height:1.32em}
+.cell{display:inline-block;width:1ch;text-align:center;vertical-align:top}
+.accent{color:var(--accent)}.secondary{color:var(--secondary)}.tertiary{color:var(--tertiary)}.highlight{color:var(--highlight)}.muted{color:var(--muted)}
+.card-foot{padding:10px 18px 13px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.meta{font-size:11px;color:var(--soft)}
+.command{font:11px Menlo,"SFMono-Regular",monospace;color:var(--soft);background:var(--stage);border:1px solid var(--border);border-radius:6px;padding:4px 7px;overflow-wrap:anywhere}
+.error{color:var(--highlight);font:13px system-ui;white-space:normal}
+.footer{font-size:12px;color:var(--soft);margin-top:27px;line-height:1.8}
+kbd{font:10px Menlo,monospace;border:1px solid var(--border);border-radius:4px;padding:2px 4px;margin:0 3px}
+.status{font-size:12px;color:var(--soft);margin-bottom:13px}
+.status strong{color:var(--ink);font-weight:600}
+.capture-label{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:auto 0 auto auto}
+.activity-comparison{display:none}
+body.asset-capture{background:var(--bg)}
+body.asset-capture main{padding:12px;max-width:none}
+body.asset-capture header,body.asset-capture .controls,body.asset-capture .status,body.asset-capture .footer{display:none}
+body.capture-animations .gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+body.capture-animations .card-head{padding:9px 12px}
+body.capture-animations .card h2{font-size:14px;margin:0}
+body.capture-animations .description,body.capture-animations .expand,body.capture-animations .card-foot{display:none}
+body.capture-animations .theatre{min-height:72px;padding:12px 8px;border-bottom:0}
+body.capture-animations .drawing{font-size:13px}
+body.capture-activity #gallery{display:none}
+body.capture-activity .activity-comparison{display:grid;gap:9px}
+body.capture-activity .activity-comparison .card{display:block}
+body.capture-activity .description,body.capture-activity .expand,body.capture-activity .card-foot{display:none}
+body.capture-activity .card-head{padding:10px 16px;align-items:center}
+body.capture-activity .card h2{font-size:15px;margin:0}
+body.capture-activity .theatre{min-height:96px;padding:14px 12px;border-bottom:0}
+body.capture-activity .drawing{font-size:18px}
+@media(min-width:1180px){.gallery{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){main{padding:22px 12px 34px}h1{font-size:26px}header{align-items:flex-start}.badge{font-size:11px}.controls{padding:12px;top:6px}.speed{font-size:12px}.options{gap:12px}.card-head{padding:14px}.card-foot{padding:10px 14px}.theatre{padding:18px 10px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+</style>
+</head>
+<body><main>
+<header><div><span class="eyebrow">pi-hush visual reference</span><h1>Hush animation gallery</h1><p>Every built-in, rendered live from the same source as the extension.</p></div><span class="badge" id="count">Local preview</span></header>
+<section class="controls" aria-label="Animation review controls">
+<div class="playback"><button id="play" class="primary" type="button">Pause</button><button id="restart" type="button">Restart</button><input id="timeline" aria-label="Playback time" type="range" min="0" max="60000" step="50" value="0"><output id="clock" aria-live="off">0:00.0</output><label class="speed">Speed <select id="speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div>
+<details><summary>Layout &amp; appearance <span id="layout-summary"></span></summary><div class="options">
+<label class="option">Terminal columns<div><input id="columns" type="range" min="2" max="120" value="54" aria-label="Terminal columns"><input id="columns-number" type="number" min="2" max="120" value="54" aria-label="Terminal columns number"></div></label>
+<label class="option">Height budget<select id="rows"><option value="1">1 row · short pane</option><option value="2">Up to 2 rows</option><option value="3" selected>Up to 3 rows</option></select></label>
+<label class="option">Animation width<select id="width-mode"><option value="auto">Author defaults</option><option value="full">100% available space</option></select></label>
+<label class="option">Activity text<select id="activity"><option value="off">Off</option><option value="right">On · right</option><option value="left" selected>On · left</option></select></label>
+<label class="option">Activity label<select id="activity-label"><option selected>Working…</option><option>Thinking…</option><option>Running read +2…</option><option>Responding…</option></select></label>
+<label class="option">Preview palette<select id="theme"><option value="rose">Rosé Pine</option><option value="night">Midnight</option><option value="paper">Paper</option></select></label>
+<label class="option">Maximum preview text size<select id="font-size"><option value="14">14 px</option><option value="16" selected>16 px</option><option value="18">18 px</option><option value="22">22 px</option></select></label>
+</div><p class="hint">Layout changes preserve playback time. Width controls terminal drawing space, not zoom; activity reserves up to <span id="activity-reserve">18</span> columns, including the gap. The web preview scales down to fit each card without changing the terminal layout.</p></details>
+</section>
+<p class="status"><strong id="motion-note">One shared clock.</strong> Pause and scrub to inspect a pose; expand a card for a closer look. <kbd>Space</kbd> toggles playback.</p>
+<section class="gallery" id="gallery" aria-label="Built-in animations"></section>
+<p class="footer">This offline page never changes your Hush settings or loads network resources. Rebuild it after animation edits.<br>Colours use preview palettes; terminal fonts and your Pi theme can look slightly different.</p>
+</main><script>__GALLERY_SCRIPT__</script></body>
+</html>

@@ -1,4 +1,4 @@
-# pi-hush
+![pi-hush](https://raw.githubusercontent.com/ludoroo/pi-hush/main/docs/assets/banner.png)
 
 **Keep the conversation. Quiet the tool chatter.**
 

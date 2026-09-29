@@ -148,14 +148,14 @@ Pi also does not expose ownership or getters for working-row visibility and widg
 
 For operational user rows, only user-role content made entirely of text blocks is eligible. Image-bearing messages and custom message types remain on Pi's normal rendering path. See [Hidden operational-message prefixes](advanced/message-prefixes.md).
 
-## Before the first npm release
+## Release checklist
 
 Publishing is a separate, explicit step; preview generation and packaging checks never publish anything.
 
 1. Run the runtime tests and preview checks, then inspect `npm pack --dry-run --ignore-scripts`. The package includes the GIFs, self-contained gallery, and guides—not development sources, user settings, or Git metadata.
 2. Ensure the GitHub repository is public before publishing. Keep README images under `docs/assets/`, linked with absolute `https://raw.githubusercontent.com/ludoroo/pi-hush/main/…` URLs; link guides with absolute `https://github.com/ludoroo/pi-hush/blob/main/…` URLs. These links follow `main` and let the same README work on GitHub and npm without depending on an npm CDN. Verify the images and guides without GitHub authentication, and check the npm page after publication.
-3. Remove the README's pending-publication note in the release commit. Until then, review the gallery locally with `docs/preview.html`; its content is self-contained.
-4. Ensure the release tag identifies the commit being published. The existing local `v0.1.0` tag predates this README/preview work; update the release tag only when the final release commit is ready, rather than publishing a version with a mismatched tag.
+3. Keep the `pi-package` keyword and the `pi.extensions` manifest in `package.json`; these make the npm package discoverable and loadable by Pi. Set `pi.image` to the public animation preview URL for the package gallery. Remove any pending-publication note from the README in the release commit.
+4. Create an annotated release tag matching the package version on the final release commit, and verify that it identifies the exact code being published. Do not move an already-published release tag to different code.
 
 ## Change guidelines
 

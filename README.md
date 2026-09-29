@@ -39,8 +39,6 @@ Want to try different widths, layouts, and colours? Open `docs/preview.html` fro
 pi install npm:pi-hush
 ```
 
-> The first npm release is being prepared; the package is not published yet.
-
 Restart Pi or run `/reload`. Hush is on immediately—no configuration file required.
 
 ## Everyday controls

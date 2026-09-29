@@ -47,6 +47,7 @@
     "typebox": "*"
   },
   "pi": {
+    "image": "https://raw.githubusercontent.com/ludoroo/pi-hush/main/docs/assets/animations.gif",
     "extensions": [
       "./extensions/hush/index.ts"
     ]

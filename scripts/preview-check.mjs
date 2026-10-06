@@ -6,9 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { BUILT_IN_HUSH_ANIMATIONS } from "../extensions/hush/animations/index.ts";
 import {
-  HUSH_ACTIVITY_RESERVE_WIDTH,
   HUSH_LOADER_INDENT,
-  composeHushWorkingLine,
   normalizeHushWidgetFrame,
   renderHushAnimation,
   resolveHushAnimationHeight,
@@ -46,10 +44,7 @@ function expectedFrames(time, config) {
       (text) => text,
     ]),
   );
-  const available = Math.max(
-    0,
-    config.columns - HUSH_LOADER_INDENT - (config.activity === "off" ? 0 : HUSH_ACTIVITY_RESERVE_WIDTH),
-  );
+  const available = Math.max(0, config.columns - HUSH_LOADER_INDENT);
   return BUILT_IN_HUSH_ANIMATIONS.map((animation) => {
     const width = resolveHushAnimationWidth(
       config.widthMode === "full" ? { ratio: 1 } : animation.width,
@@ -67,19 +62,8 @@ function expectedFrames(time, config) {
             palette,
           );
     const lines = normalizeHushWidgetFrame(rows, width, height).map(
-      (animationLine, index) =>
-        (
-          " ".repeat(HUSH_LOADER_INDENT) +
-          composeHushWorkingLine({
-            animationLine,
-            animationWidth: width,
-            viewportWidth: config.columns - HUSH_LOADER_INDENT,
-            activityText:
-              index === Math.floor(height / 2) ? config.activityLabel : undefined,
-            activityTextEnabled: config.activity !== "off",
-            activityTextPosition: config.activity === "left" ? "left" : "right",
-          })
-        ).padEnd(config.columns, " "),
+      (animationLine) =>
+        (" ".repeat(HUSH_LOADER_INDENT) + animationLine).padEnd(config.columns, " "),
     );
     return { id: animation.id, width, height, frame, elapsedMs, rows: lines, error: null };
   });
@@ -143,13 +127,12 @@ try {
   assert.equal(await page.locator(".card").count(), 7);
   assert.equal(await page.locator("h1").textContent(), "Hush animation gallery");
   const initial = await page.evaluate(() => window.hushGallery.inspect());
-  assert.equal(initial.config.activity, "left", "preview should match Hush's default activity position");
+  assert.equal(initial.config.activity, "left", "preview should enable Hush activity by default");
   assert.equal(initial.config.activityLabel, "Working…", "preview should use Hush's default busy label");
-  assert.equal(await page.locator("#activity-reserve").textContent(), String(HUSH_ACTIVITY_RESERVE_WIDTH));
   let comparisons = 0;
   for (const columns of [2, 10, 18, 19, 20, 24, 26, 54, 96]) {
     for (const rows of [1, 2, 3]) {
-      for (const activity of ["off", "left", "right"]) {
+      for (const activity of ["off", "left"]) {
         for (const widthMode of ["auto", "full"]) {
           const config = { columns, rows, activity, widthMode, activityLabel: "Working…" };
           for (const time of [0, 1234, 6100, 13_200]) {

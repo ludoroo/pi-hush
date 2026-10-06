@@ -64,6 +64,8 @@ function createContext(hasUI: boolean) {
       notifications.push({ message, level });
     },
     setWorkingVisible() {},
+    setWorkingMessage() {},
+    setWorkingIndicator() {},
     setHiddenThinkingLabel() {},
     setStatus() {},
     setWidget() {},

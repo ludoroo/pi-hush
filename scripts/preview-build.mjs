@@ -28,9 +28,7 @@ const payload = {
   resolveHushAnimationHeight: api.resolveHushAnimationHeight.toString(),
   HUSH_ANIMATION_ROW_BUDGET: api.HUSH_ANIMATION_ROW_BUDGET,
   HUSH_LOADER_INDENT: api.HUSH_LOADER_INDENT,
-  HUSH_ACTIVITY_RESERVE_WIDTH: api.HUSH_ACTIVITY_RESERVE_WIDTH,
   checks: {
-    activityReserveWidth: api.HUSH_ACTIVITY_RESERVE_WIDTH,
     identity: api.defineHushWorkingAnimation(identity) === identity,
     fixedWidth: api.resolveHushAnimationWidth(12, 8),
     proportionalWidth: api.resolveHushAnimationWidth(
@@ -93,7 +91,7 @@ async function generateApiShim() {
       fail(`actual animation API did not expose ${name} as a function`);
     }
   }
-  if (!Number.isInteger(api.HUSH_ANIMATION_ROW_BUDGET) || !Number.isInteger(api.HUSH_LOADER_INDENT) || !Number.isInteger(api.HUSH_ACTIVITY_RESERVE_WIDTH)) {
+  if (!Number.isInteger(api.HUSH_ANIMATION_ROW_BUDGET) || !Number.isInteger(api.HUSH_LOADER_INDENT)) {
     fail("actual animation API constants were not integers");
   }
 
@@ -101,7 +99,6 @@ async function generateApiShim() {
     "// Generated at build time from the real Hush animation API.",
     `export const HUSH_ANIMATION_ROW_BUDGET = ${JSON.stringify(api.HUSH_ANIMATION_ROW_BUDGET)};`,
     `export const HUSH_LOADER_INDENT = ${JSON.stringify(api.HUSH_LOADER_INDENT)};`,
-    `export const HUSH_ACTIVITY_RESERVE_WIDTH = ${JSON.stringify(api.HUSH_ACTIVITY_RESERVE_WIDTH)};`,
     `export ${api.defineHushWorkingAnimation}`,
     `export ${api.resolveHushAnimationWidth}`,
     `export ${api.resolveHushAnimationHeight}`,

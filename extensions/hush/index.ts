@@ -531,7 +531,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("hush", {
     description:
-      "Hush transcript and working animation: /hush on, thinking, activity [left|right], animation <name>, width <columns|percent|auto>, or off.",
+      "Hush transcript and working animation: /hush on, thinking, activity (legacy left|right), animation <name>, width <columns|percent|auto>, or off.",
     getArgumentCompletions: getHushArgumentCompletions,
     handler: async (args, ctx) => {
       const argument = args.trim().toLowerCase();
@@ -591,7 +591,7 @@ export default function (pi: ExtensionAPI) {
             ? ""
             : "; activity text is off — use /hush activity to enable it";
           ctx.ui.notify(
-            `Hush activity position: ${activityTextPosition}${enableHint}`,
+            `Hush activity position saved for compatibility: ${activityTextPosition}${enableHint}`,
             "info",
           );
         }

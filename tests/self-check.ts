@@ -53,7 +53,6 @@ import {
   HUSH_LOADER_INDENT,
   HushAnimationHost,
   HushAnimationRegistry,
-  composeHushWorkingLine,
   defineHushWorkingAnimation,
   normalizeHushWidgetFrame,
   renderHushAnimation,
@@ -219,6 +218,8 @@ function createHushCommandHarness() {
       notifications.push({ message, level });
     },
     setWorkingVisible() {},
+    setWorkingMessage() {},
+    setWorkingIndicator() {},
     setHiddenThinkingLabel() {},
     setStatus() {},
     getToolsExpanded() {
@@ -421,7 +422,7 @@ const presentationState = {
   thinking: false,
   workingAnimationId: "wave",
   activityTextEnabled: true,
-  activityText: "Thinking…",
+  activityText: "Thinking",
   stockExportRendering: false,
 };
 assert.equal(
@@ -438,7 +439,7 @@ assert.equal(
 );
 assert.equal(
   presentationPublisher.publish(
-    { ...presentationState, activityText: "Responding…" },
+    { ...presentationState, activityText: "Responding" },
     (state) => publishedPresentationStates.push(state),
   ),
   true,
@@ -470,7 +471,7 @@ assert.equal(
 presentationPublisher.reset();
 assert.equal(
   presentationPublisher.publish(
-    { ...presentationState, activityText: "Responding…" },
+    { ...presentationState, activityText: "Responding" },
     (state) => publishedPresentationStates.push(state),
   ),
   true,
@@ -519,51 +520,6 @@ const normalizedWidgetFrame = normalizeHushWidgetFrame(
 );
 assert.deepEqual(normalizedWidgetFrame.map(visibleWidth), [3]);
 assert.equal(normalizedWidgetFrame[0]?.startsWith("abc"), true);
-assert.equal(
-  composeHushWorkingLine({
-    animationLine: "abc",
-    animationWidth: 3,
-    viewportWidth: 30,
-  }),
-  "abc",
-);
-assert.equal(
-  composeHushWorkingLine({
-    animationLine: "x",
-    animationWidth: 3,
-    viewportWidth: 30,
-    activityText: "Thinking…",
-  }),
-  "x   Thinking…",
-);
-assert.equal(
-  composeHushWorkingLine({
-    animationLine: "abc",
-    animationWidth: 3,
-    viewportWidth: 5,
-    activityText: "Thinking…",
-  }),
-  "abc …",
-);
-const clippedWorkingLine = composeHushWorkingLine({
-  animationLine: "abc",
-  animationWidth: 3,
-  viewportWidth: 10,
-  activityText: "Responding…",
-  styleActivity: (text) => `\x1b[2m${text}\x1b[22m`,
-});
-assert.equal(visibleWidth(clippedWorkingLine), 10);
-assert.equal(clippedWorkingLine.includes("\x1b[2mRespo…\x1b[22m"), true);
-assert.equal(clippedWorkingLine.includes("\n"), false);
-assert.equal(
-  composeHushWorkingLine({
-    animationLine: "abc",
-    animationWidth: 3,
-    viewportWidth: 9,
-    activityText: "Thinking…",
-  }),
-  "abc Thin…",
-);
 const testAnimation = defineHushWorkingAnimation({
   id: "test",
   label: "Test",
@@ -793,6 +749,8 @@ const hostTheme = {
 } as unknown as Theme;
 let hostWidget: (Component & { dispose?(): void }) | undefined;
 let workingVisible = true;
+let hostWorkingMessage: string | undefined;
+let hostWorkingIndicator: { frames?: string[] } | undefined;
 const hostNotifications: string[] = [];
 const hostUi = {
   theme: hostTheme,
@@ -809,6 +767,12 @@ const hostUi = {
   setWorkingVisible: (visible: boolean) => {
     workingVisible = visible;
   },
+  setWorkingMessage: (message?: string) => {
+    hostWorkingMessage = message;
+  },
+  setWorkingIndicator: (options?: { frames?: string[] }) => {
+    hostWorkingIndicator = options;
+  },
   notify: (message: string) => {
     hostNotifications.push(message);
   },
@@ -819,9 +783,10 @@ const animationHost = new HushAnimationHost(
 );
 animationHost.apply(hostUi, { enabled: true, animationId: "wave" });
 assert.equal(hostWidget, undefined);
-assert.equal(workingVisible, true);
+assert.equal(workingVisible, false);
 animationHost.setWorking(true);
 assert.equal(workingVisible, false);
+assert.equal(hostWorkingMessage, undefined);
 assert.equal(intervalCallbacks.size, 1);
 const mountedWaveWidget = (():
   | (Component & { dispose?(): void })
@@ -862,7 +827,7 @@ assert.ok(resumedWaveWidget);
 assert.deepEqual(resumedWaveWidget.render(30), advancedWaveFrame);
 
 // Activity updates reuse the mounted widget and timer, preserving animation state.
-animationHost.setActivityText("Thinking…");
+animationHost.setActivityText("Thinking");
 assert.deepEqual(resumedWaveWidget.render(30), advancedWaveFrame);
 animationHost.apply(hostUi, {
   enabled: true,
@@ -875,16 +840,18 @@ const activityWaveWidget = (():
 assert.ok(activityWaveWidget);
 assert.equal(activityWaveWidget, resumedWaveWidget);
 assert.equal(intervalCallbacks.size, 1);
-assert.equal(activityWaveWidget.render(40)[0]?.includes("Thinking…"), true);
-assert.equal(activityWaveWidget.render(14)[0], " Thinking…");
+assert.equal(activityWaveWidget.render(40)[0]?.includes("Thinking"), false);
+assert.equal(hostWorkingMessage, "Thinking");
 const rendersBeforeActivityUpdate = hostRenderRequests;
-animationHost.setActivityText("Running read…");
+animationHost.setActivityText("Running read");
 assert.equal(hostWidget, activityWaveWidget);
 assert.equal(intervalCallbacks.size, 1);
-assert.equal(hostRenderRequests, rendersBeforeActivityUpdate + 1);
-assert.equal(activityWaveWidget.render(40)[0]?.includes("Running read…"), true);
+assert.equal(hostRenderRequests, rendersBeforeActivityUpdate);
+assert.equal(activityWaveWidget.render(40)[0]?.includes("Running read"), false);
+assert.equal(hostWorkingMessage, "Running read");
+assert.equal(workingVisible, true);
 
-// Activity keeps 18 columns ahead of even a 100%-width animation.
+// Activity position remains compatible configuration but does not affect layout.
 animationHost.apply(hostUi, {
   enabled: true,
   animationId: "shooting-star",
@@ -896,9 +863,9 @@ const shootingStarWidget = (():
   | undefined => hostWidget)();
 assert.ok(shootingStarWidget);
 const shootingStarRows = shootingStarWidget.render(40);
-const shootingStarActivityLine = shootingStarRows[Math.floor(shootingStarRows.length / 2)] ?? "";
-assert.equal(visibleWidth(shootingStarActivityLine), 36);
-assert.equal(shootingStarActivityLine.includes("Running read…"), true);
+assert.ok(shootingStarRows.every((line) => !line.includes("Running read")));
+assert.equal(visibleWidth(shootingStarRows[0] ?? ""), 40);
+assert.equal(hostWorkingMessage, "Running read");
 animationHost.apply(hostUi, {
   enabled: true,
   animationId: "shooting-star",
@@ -906,6 +873,8 @@ animationHost.apply(hostUi, {
 });
 assert.equal(hostWidget, shootingStarWidget);
 assert.equal(intervalCallbacks.size, 1);
+assert.equal(hostWorkingMessage, undefined);
+assert.equal(workingVisible, false);
 assert.equal(visibleWidth(shootingStarWidget.render(40)[0] ?? ""), 40);
 
 // User-authored renderer failures never escape the widget or leave a blank loader.
@@ -953,7 +922,7 @@ assert.equal(
 );
 animationHost.setWorking(false);
 assert.equal(hostWidget, undefined);
-assert.equal(workingVisible, true);
+assert.equal(workingVisible, false);
 assert.equal(intervalCallbacks.size, 0);
 animationHost.setWorking(true);
 assert.equal(intervalCallbacks.size, 1);
@@ -975,8 +944,16 @@ assert.equal(intervalCallbacks.size, 1);
 animationHost.apply(hostUi, { enabled: false, animationId: "bars" });
 assert.equal(hostWidget, undefined);
 assert.equal(workingVisible, true);
+assert.equal(hostWorkingMessage, undefined);
+assert.equal(hostWorkingIndicator, undefined);
 assert.equal(intervalCallbacks.size, 0);
+// Reapplying settings while Hush is off must not hide Pi's native spinner.
+animationHost.apply(hostUi, { enabled: false, animationId: "bars" });
+assert.equal(hostWorkingMessage, undefined);
+assert.equal(hostWorkingIndicator, undefined);
 animationHost.dispose({ restorePi: true });
+assert.equal(hostWorkingMessage, undefined);
+assert.equal(hostWorkingIndicator, undefined);
 assert.equal(intervalCallbacks.size, 0);
 globalThis.setInterval = realSetInterval;
 globalThis.clearInterval = realClearInterval;

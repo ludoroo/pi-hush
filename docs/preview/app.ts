@@ -5,7 +5,6 @@ import type {
   HushWorkingAnimation,
 } from "../../extensions/hush/lib/animation.ts";
 import {
-  HUSH_ACTIVITY_RESERVE_WIDTH,
   HUSH_LOADER_INDENT,
   resolveHushAnimationHeight,
   resolveHushAnimationWidth,
@@ -49,7 +48,7 @@ const config: LayoutConfig = {
   rows: 3,
   widthMode: "auto",
   activity: "left",
-  activityLabel: "Working…",
+  activityLabel: "Working",
 };
 const roles = new Set(["accent", "secondary", "tertiary", "highlight", "muted"]);
 const blank = (): Cell => ({ text: " ", color: "muted" });
@@ -83,32 +82,9 @@ function normalizeRow(row: HushAnimationRow | undefined, width: number): Cell[] 
   return [...cells, ...spaces(width - cells.length)];
 }
 
-function truncatedActivityLabel(width: number): string {
-  const text = config.activityLabel;
-  if (width <= 0) return "";
-  return text.length <= width ? text : `${text.slice(0, width - 1)}…`;
-}
-
-/** Uses Hush's shared activity reservation and stable left alignment. */
-function composeRow(cells: Cell[], width: number, row: number, height: number): Cell[] {
-  let content = cells;
-  if (config.activity !== "off") {
-    const available = Math.max(0, config.columns - HUSH_LOADER_INDENT);
-    const gap = width > 0 ? 1 : 0;
-    const activityWidth = Math.max(0, Math.min(HUSH_ACTIVITY_RESERVE_WIDTH - gap, available - width - gap));
-    const label = plainCells(
-      row === Math.floor(height / 2) ? truncatedActivityLabel(activityWidth) : "",
-    );
-    if (config.activity === "left") {
-      content =
-        width === 0
-          ? label
-          : [...label, ...spaces(activityWidth - label.length + gap), ...cells];
-    } else if (label.length > 0) {
-      content = [...cells, ...spaces(gap), ...label];
-    }
-  }
-  const line = [...spaces(HUSH_LOADER_INDENT), ...content].slice(0, config.columns);
+/** Compose the animation-only widget; Pi owns the separate activity divider. */
+function composeRow(cells: Cell[]): Cell[] {
+  const line = [...spaces(HUSH_LOADER_INDENT), ...cells].slice(0, config.columns);
   return [...line, ...spaces(config.columns - line.length)];
 }
 
@@ -243,7 +219,7 @@ function syncExpanded(): void {
 function render(force = false): void {
   const available = Math.max(
     0,
-    config.columns - HUSH_LOADER_INDENT - (config.activity === "off" ? 0 : HUSH_ACTIVITY_RESERVE_WIDTH),
+    config.columns - HUSH_LOADER_INDENT,
   );
   for (const record of records) {
     const { animation } = record;
@@ -274,10 +250,10 @@ function render(force = false): void {
       const drawing = Array.from({ length: height }, (_, row) =>
         normalizeRow(rawRows[row], width),
       );
-      const lines = drawing.map((cells, row) => composeRow(cells, width, row, height));
+      const lines = drawing.map((cells) => composeRow(cells));
       drawLines(record.drawing, lines);
       record.meta.textContent =
-        `${width} × ${height} ${width === 0 ? "· activity has priority" : "canvas"}` +
+        `${width} × ${height} canvas` +
         ` · ${animation.intervalMs} ms · ` +
         (config.widthMode === "full" ? "full-width override" : preferredWidth(animation));
       record.snapshot = {
@@ -361,7 +337,7 @@ function updateLayout(): void {
   config.activityLabel = controls.activityLabel.value;
   config.widthMode = controls.widthMode.value;
   controls.summary.textContent =
-    `· ${config.columns} columns · up to ${config.rows} rows · activity ${config.activity}`;
+    `· ${config.columns} columns · up to ${config.rows} rows · native activity ${config.activity === "off" ? "off" : config.activityLabel}`;
   layoutVersion += 1;
   render(true);
 }
@@ -421,7 +397,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 element("count").textContent = `${records.length} built-ins · offline`;
-element("activity-reserve").textContent = String(HUSH_ACTIVITY_RESERVE_WIDTH);
 controls.motionNote.textContent = reducedMotion
   ? "Reduced motion is on, so playback starts paused."
   : "One shared clock.";

@@ -94,11 +94,11 @@ body.capture-activity .drawing{font-size:18px}
 <label class="option">Terminal columns<div><input id="columns" type="range" min="2" max="120" value="54" aria-label="Terminal columns"><input id="columns-number" type="number" min="2" max="120" value="54" aria-label="Terminal columns number"></div></label>
 <label class="option">Height budget<select id="rows"><option value="1">1 row · short pane</option><option value="2">Up to 2 rows</option><option value="3" selected>Up to 3 rows</option></select></label>
 <label class="option">Animation width<select id="width-mode"><option value="auto">Author defaults</option><option value="full">100% available space</option></select></label>
-<label class="option">Activity text<select id="activity"><option value="off">Off</option><option value="right">On · right</option><option value="left" selected>On · left</option></select></label>
-<label class="option">Activity label<select id="activity-label"><option selected>Working…</option><option>Thinking…</option><option>Running read +2…</option><option>Responding…</option></select></label>
+<label class="option">Activity text<select id="activity"><option value="off">Off · Pi default</option><option value="left" selected>On · Pi divider</option></select></label>
+<label class="option">Activity label<select id="activity-label"><option selected>Working</option><option>Thinking</option><option>Running read +2</option><option>Responding</option></select></label>
 <label class="option">Preview palette<select id="theme"><option value="rose">Rosé Pine</option><option value="night">Midnight</option><option value="paper">Paper</option></select></label>
 <label class="option">Maximum preview text size<select id="font-size"><option value="14">14 px</option><option value="16" selected>16 px</option><option value="18">18 px</option><option value="22">22 px</option></select></label>
-</div><p class="hint">Layout changes preserve playback time. Width controls terminal drawing space, not zoom; activity reserves up to <span id="activity-reserve">18</span> columns, including the gap. The web preview scales down to fit each card without changing the terminal layout.</p></details>
+</div><p class="hint">Layout changes preserve playback time. Width controls terminal drawing space, not zoom. Activity text uses Pi's separate editor divider, so it does not consume animation width. The web preview scales down to fit each card without changing the terminal layout.</p></details>
 </section>
 <p class="status"><strong id="motion-note">One shared clock.</strong> Pause and scrub to inspect a pose; expand a card for a closer look. <kbd>Space</kbd> toggles playback.</p>
 <section class="gallery" id="gallery" aria-label="Built-in animations"></section>

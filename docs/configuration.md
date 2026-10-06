@@ -53,8 +53,8 @@ Available settings:
 | `enabled` | boolean | `true` | Whether Hush presentation is active. |
 | `thinking` | boolean | `false` | Whether thinking/CoT is shown while Hush is active. |
 | `animation` | string | `"flock"` | Selected animation ID. IDs start with a lowercase letter or digit and then contain lowercase letters, digits, `_`, or `-`. |
-| `activity.enabled` | boolean | `true` | Show concise live activity text beside the animation. |
-| `activity.position` | `"left"` or `"right"` | `"left"` | Side used for activity text. |
+| `activity.enabled` | boolean | `true` | Show concise live activity text in Pi's native working-status divider. |
+| `activity.position` | `"left"` or `"right"` | `"left"` | Retained for compatibility; it does not affect text rendered in Pi's divider. |
 | `transcript.hidden_input_prefixes` | array of nonblank strings | `[]` | Literal prefixes whose text-only user rows Hush may hide. See [Message prefixes](advanced/message-prefixes.md). |
 | `animations.<id>.width` | width value | authored animation default | Override one animation's drawing width. |
 
@@ -62,7 +62,7 @@ Unknown animation IDs and unrelated values are retained when a command edits a k
 
 ## Activity layout
 
-When enabled, activity text reserves up to **18 columns**, including a one-column separator when an animation fits. The reservation stays fixed as labels change or disappear, so the animation does not shift around. Longer labels are truncated rather than wrapped; in narrow panes, the animation shrinks before the text.
+When enabled, Hush sends its live label to Pi's native working message. Pi renders that status in the editor's top divider, while Hush's widget remains animation-only and can use the full available animation width. Disabling activity text hides Pi's entire working-status row while Hush's animation runs; turning Hush off restores Pi's default working presentation. Custom editor extensions that do not support Pi's embedded working status may render the enabled activity message as a separate status row instead.
 
 ## Width values
 

@@ -179,6 +179,7 @@ function createHarness(mode: "rpc" | "tui" = "rpc") {
   const notifications: Array<{ message: string; level: string }> = [];
   const presentations: HushPresentationState[] = [];
   let widget: (Component & { dispose?(): void }) | undefined;
+  let workingMessage: string | undefined;
   let command:
     | {
         handler(
@@ -193,6 +194,8 @@ function createHarness(mode: "rpc" | "tui" = "rpc") {
       notifications.push({ message, level });
     },
     setWorkingVisible() {},
+    setWorkingMessage(message?: string) { workingMessage = message; },
+    setWorkingIndicator() {},
     setHiddenThinkingLabel() {},
     setStatus() {},
     getToolsExpanded: () => toolsExpanded,
@@ -276,6 +279,9 @@ function createHarness(mode: "rpc" | "tui" = "rpc") {
       assert.ok(handler, `Missing lifecycle handler: ${eventName}`);
       await handler(event, context);
     },
+    workingMessage() {
+      return workingMessage;
+    },
     renderedWidth(viewportWidth: number) {
       assert.ok(widget);
       return visibleWidth(widget.render(viewportWidth)[0] ?? "");
@@ -337,7 +343,8 @@ try {
   assert.equal(first.presentations.at(-1)?.activityTextEnabled, true);
   assert.equal(first.presentations.at(-1)?.activityTextPosition, "left");
   const defaultLines = first.renderedLines(100);
-  assert.ok(defaultLines[Math.floor(defaultLines.length / 2)]?.startsWith(" Working…"));
+  assert.ok(defaultLines.every((line) => !line.includes("Working")));
+  assert.equal(first.workingMessage(), "Working");
   assert.equal(first.renderedWidth(100), 100);
   assert.equal(existsSync(paths.config), false);
   await first.run("width auto");
@@ -440,55 +447,57 @@ try {
     await events.run("activity");
     const expectActivity = (label: string) => {
       assert.equal(events.presentations.at(-1)?.activityText, label);
-      assert.ok(events.renderedLines(100).some((line) => line.includes(label)));
+      assert.equal(events.workingMessage(), label);
+      assert.ok(events.renderedLines(100).every((line) => !line.includes(label)));
     };
     const update = (type: string) => events.emit("message_update", {
       assistantMessageEvent: { type },
     });
     const assistant = { role: "assistant" };
-    expectActivity("Working…");
+    expectActivity("Working");
     await events.emit("message_start", { message: assistant });
     await update("thinking_start");
-    expectActivity("Thinking…");
+    expectActivity("Thinking");
     const beforeRepeatedDelta = events.presentations.length;
     await update("thinking_delta");
     await update("thinking_delta");
     assert.equal(events.presentations.length, beforeRepeatedDelta);
     await events.emit("message_end", { message: { role: "toolResult" } });
-    expectActivity("Thinking…");
+    expectActivity("Thinking");
     await update("thinking_end");
-    expectActivity("Working…");
+    expectActivity("Working");
     await update("text_start");
-    expectActivity("Responding…");
+    expectActivity("Responding");
     await update("text_end");
-    expectActivity("Working…");
+    expectActivity("Working");
     await update("toolcall_start");
-    expectActivity("Working…");
+    expectActivity("Working");
     await events.emit("tool_execution_start", { toolCallId: "a", toolName: "read" });
     await events.emit("tool_execution_start", { toolCallId: "b", toolName: "bash" });
-    expectActivity("Running read +1…");
+    expectActivity("Running read +1");
     await events.emit("message_end", { message: assistant });
-    expectActivity("Running read +1…");
+    expectActivity("Running read +1");
     await events.emit("tool_execution_end", { toolCallId: "a" });
-    expectActivity("Running bash…");
+    expectActivity("Running bash");
     await events.emit("tool_execution_end", { toolCallId: "b" });
-    expectActivity("Working…");
+    expectActivity("Working");
     await update("thinking_delta");
     await events.emit("message_end", { message: { ...assistant, stopReason: "error" } });
-    expectActivity("Working…");
+    expectActivity("Working");
     await update("text_delta");
-    expectActivity("Responding…");
+    expectActivity("Responding");
     await events.emit("message_start", { message: assistant });
-    expectActivity("Working…");
+    expectActivity("Working");
     await update("thinking_start");
     await events.emit("agent_end");
-    expectActivity("Working…");
+    expectActivity("Working");
     await events.emit("agent_settled");
     assert.equal(events.presentations.at(-1)?.activityText, undefined);
+    assert.equal(events.workingMessage(), undefined);
     await update("thinking_delta");
     assert.equal(events.presentations.at(-1)?.activityText, undefined);
     await events.emit("agent_start");
-    expectActivity("Working…");
+    expectActivity("Working");
   } finally {
     await events.close();
     writeFileSync(paths.config, beforeActivity);

@@ -10,7 +10,6 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import {
-  DEFAULT_HUSH_ACTIVITY_POSITION,
   sanitizeHushActivityText,
   type HushActivityPosition,
 } from "./activity.ts";
@@ -23,8 +22,6 @@ export const HUSH_ANIMATION_MAX_HEIGHT = 10;
 export const HUSH_ANIMATION_ROW_BUDGET = 3;
 /** Align Hush output with Pi's conversation text using a compact inset. */
 export const HUSH_LOADER_INDENT = 1;
-/** Stable activity lane, including its one-column gap when an animation fits. */
-export const HUSH_ACTIVITY_RESERVE_WIDTH = 18;
 
 export type HushAnimationPalette = {
   /** Pi's primary accent token. */
@@ -354,62 +351,6 @@ export function normalizeHushWidgetFrame(
   });
 }
 
-/** Compose one non-wrapping row, giving activity text a bounded priority. */
-export function composeHushWorkingLine(options: {
-  animationLine: string;
-  animationWidth: number;
-  viewportWidth: number;
-  activityText?: string;
-  /** Reserve the activity column even on blank/non-middle rows. */
-  activityTextEnabled?: boolean;
-  activityTextPosition?: HushActivityPosition;
-  styleActivity?: (text: string) => string;
-}): string {
-  const viewportWidth = Math.max(0, Math.floor(options.viewportWidth));
-  if (viewportWidth === 0) return "";
-  const animationWidth = Math.min(
-    Math.max(0, Math.floor(options.animationWidth)),
-    viewportWidth,
-  );
-  const animationLine = truncateToWidth(
-    options.animationLine,
-    animationWidth,
-    "",
-  );
-  const activityText = sanitizeHushActivityText(options.activityText ?? "");
-  const activityEnabled = options.activityTextEnabled ?? Boolean(activityText);
-  if (!activityEnabled) return animationLine;
-
-  const gapWidth = animationWidth > 0 ? 1 : 0;
-  const activityWidth = Math.min(
-    HUSH_ACTIVITY_RESERVE_WIDTH - gapWidth,
-    viewportWidth - animationWidth - gapWidth,
-  );
-  if (activityWidth <= 0) return animationLine;
-  const animationPadding = " ".repeat(
-    Math.max(0, animationWidth - visibleWidth(animationLine)),
-  );
-  const activity = truncateToWidth(
-    activityText,
-    activityWidth,
-    "…",
-  ).replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
-  const textWidth = visibleWidth(activity);
-  const styledActivity = textWidth > 0
-    ? (options.styleActivity ?? ((text) => text))(activity)
-    : "";
-  const gap = gapWidth === 0 ? "" : " ";
-  if (options.activityTextPosition === "left") {
-    if (animationWidth === 0) return styledActivity;
-    // A stable leading column keeps every animation row aligned when the label
-    // changes length, disappears, or is only drawn beside the middle row.
-    const activityPadding = " ".repeat(activityWidth - textWidth);
-    return `${styledActivity}${activityPadding}${gap}${animationLine}${animationPadding}`;
-  }
-  if (textWidth === 0) return animationLine;
-  return `${animationLine}${animationPadding}${gap}${styledActivity}`;
-}
-
 function animationPalette(theme: Theme): HushAnimationPalette {
   return {
     accent: (text) => theme.fg("accent", text),
@@ -428,9 +369,6 @@ type HushWidgetAnimationState = {
 };
 
 type HushWidgetPresentation = {
-  activityTextEnabled: boolean;
-  activityText: string | undefined;
-  activityTextPosition: HushActivityPosition;
   widthOverride: HushAnimationWidth | undefined;
 };
 
@@ -500,31 +438,12 @@ class HushAnimationWidget implements Component {
       );
       const lineWidth = viewportWidth - indent;
       const prefix = " ".repeat(indent);
-      const { activityTextEnabled, activityTextPosition, activityText, widthOverride } = this.#presentation;
-      const activityReserve = activityTextEnabled
-        ? Math.min(HUSH_ACTIVITY_RESERVE_WIDTH, lineWidth)
-        : 0;
+      const { widthOverride } = this.#presentation;
       const contentWidth = resolveHushAnimationWidth(
         widthOverride ?? this.#animation.width,
-        lineWidth - activityReserve,
+        lineWidth,
       );
-      if (contentWidth === 0) {
-        if (!activityTextEnabled) return [];
-        this.#state.lastRenderedFrame = this.#state.frame;
-        this.#state.lastRenderedElapsedMs = this.#state.elapsedMs;
-        return [
-          prefix +
-            composeHushWorkingLine({
-              animationLine: "",
-              animationWidth: 0,
-              viewportWidth: lineWidth,
-              activityText,
-              activityTextEnabled,
-              activityTextPosition,
-              styleActivity: (text) => this.#theme.fg("muted", text),
-            }),
-        ];
-      }
+      if (contentWidth === 0) return [];
       const contentHeight = resolveHushAnimationHeight(
         this.#animation,
         contentWidth,
@@ -558,21 +477,7 @@ class HushAnimationWidget implements Component {
         contentWidth,
         contentHeight,
       );
-      return normalized.map(
-        (line, index) =>
-          prefix +
-          composeHushWorkingLine({
-            animationLine: line,
-            animationWidth: contentWidth,
-            viewportWidth: lineWidth,
-            activityText: index === Math.floor(contentHeight / 2)
-              ? activityText
-              : undefined,
-            activityTextEnabled,
-            activityTextPosition,
-            styleActivity: (text) => this.#theme.fg("muted", text),
-          }),
-      );
+      return normalized.map((line) => prefix + line);
     } catch (error) {
       if (!this.#renderErrorReported) {
         this.#renderErrorReported = true;
@@ -585,12 +490,7 @@ class HushAnimationWidget implements Component {
 
   setPresentation(next: HushWidgetPresentation): void {
     const current = this.#presentation;
-    if (
-      current.activityText === next.activityText &&
-      current.activityTextEnabled === next.activityTextEnabled &&
-      current.activityTextPosition === next.activityTextPosition &&
-      sameHushAnimationWidth(current.widthOverride, next.widthOverride)
-    ) return;
+    if (sameHushAnimationWidth(current.widthOverride, next.widthOverride)) return;
     this.#presentation = next;
     this.#tui.requestRender();
   }
@@ -619,7 +519,6 @@ export class HushAnimationHost {
   #widgetsEnabled = true;
   #activityTextEnabled = false;
   #activityText: string | undefined;
-  #activityTextPosition: HushActivityPosition = DEFAULT_HUSH_ACTIVITY_POSITION;
   #widthOverride: HushAnimationWidth | undefined;
   #ui: ExtensionUIContext | undefined;
   #widget: HushAnimationWidget | undefined;
@@ -676,12 +575,22 @@ export class HushAnimationHost {
       this.#animationId === animationId &&
       this.#widgetsEnabled === widgetsEnabled;
     this.#activityTextEnabled = options.activityTextEnabled ?? false;
-    this.#activityTextPosition = options.activityTextPosition ?? DEFAULT_HUSH_ACTIVITY_POSITION;
     this.#widthOverride = typeof options.widthOverride === "object"
       ? { ...options.widthOverride }
       : options.widthOverride;
     if (basePresentationUnchanged) {
       this.#widget?.setPresentation(this.#widgetPresentation(this.#widget.animationId));
+      if (!this.#enabled || !this.#widgetsEnabled) {
+        this.#restorePiWorkingPresentation();
+        return;
+      }
+      this.#syncWorkingPresentation();
+      const animation = this.#resolveRenderableAnimation();
+      if (!animation) {
+        this.#restorePiWorkingPresentation();
+        return;
+      }
+      if (this.#working && !this.#widget) this.#syncWidget(ui, animation);
       return;
     }
 
@@ -703,8 +612,10 @@ export class HushAnimationHost {
   }
 
   setActivityText(text: string | undefined): void {
-    this.#activityText = text;
-    this.#widget?.setPresentation(this.#widgetPresentation(this.#widget.animationId));
+    this.#activityText = text === undefined
+      ? undefined
+      : sanitizeHushActivityText(text);
+    this.#syncWorkingMessage();
   }
 
   dispose(options: { restorePi?: boolean } = {}): void {
@@ -717,9 +628,6 @@ export class HushAnimationHost {
 
   #widgetPresentation(forAnimationId: string): HushWidgetPresentation {
     return {
-      activityTextEnabled: this.#activityTextEnabled,
-      activityText: this.#activityTextEnabled ? this.#activityText : undefined,
-      activityTextPosition: this.#activityTextPosition,
       // Key this to the actual widget, even while a rescan retries a failed
       // selection and its previous fallback is still mounted.
       widthOverride: forAnimationId === this.#animationId
@@ -739,6 +647,7 @@ export class HushAnimationHost {
       return;
     }
 
+    this.#syncWorkingPresentation();
     const animation = this.#resolveRenderableAnimation();
     if (animation) {
       this.#syncWidget(ui, animation);
@@ -762,7 +671,6 @@ export class HushAnimationHost {
   ): void {
     if (!this.#working) {
       this.#clearWidget();
-      ui.setWorkingVisible(true);
       return;
     }
     if (this.#widget && !this.#widget.disposed) return;
@@ -775,7 +683,6 @@ export class HushAnimationHost {
       lastRenderedElapsedMs: 0,
     };
     this.#widgetStates.set(animation.id, state);
-    ui.setWorkingVisible(false);
     ui.setWidget(
       HUSH_ANIMATION_WIDGET_KEY,
       (tui, theme) => {
@@ -817,9 +724,36 @@ export class HushAnimationHost {
     this.#widget = undefined;
   }
 
+  #syncWorkingMessage(): void {
+    const ui = this.#ui;
+    if (!ui) return;
+    ui.setWorkingMessage(
+      this.#enabled && this.#widgetsEnabled && this.#activityTextEnabled
+        ? this.#activityText
+        : undefined,
+    );
+  }
+
+  #syncWorkingPresentation(): void {
+    const ui = this.#ui;
+    if (!ui) return;
+    this.#syncWorkingMessage();
+    if (this.#activityTextEnabled) {
+      // Pi renders the activity label in its divider; suppress only its spinner.
+      ui.setWorkingIndicator({ frames: [] });
+      ui.setWorkingVisible(true);
+    } else {
+      // With no Hush label, hide Pi's whole status row. Hush's animation is
+      // still visible above the editor, so showing Pi's default text duplicates it.
+      ui.setWorkingVisible(false);
+    }
+  }
+
   #restorePiWorkingPresentation(): void {
     const ui = this.#ui;
     if (!ui) return;
+    ui.setWorkingMessage();
+    ui.setWorkingIndicator();
     ui.setWorkingVisible(true);
   }
 }

@@ -133,7 +133,7 @@ width: { ratio: 0.35, minColumns: 8, maxColumns: 32 }
 
 `ratio` must be greater than 0 and at most 1. Optional bounds must be positive integer columns, and the minimum cannot exceed the maximum. Use `{ ratio: 1 }` to consume all available animation columns.
 
-The activity label receives its bounded reservation first. Hush then resolves the animation width and clamps it to what remains. A user's per-animation width setting replaces the animation's authored width and bounds. See [Configuration](../configuration.md#width-values).
+Hush resolves animation width against the widget's full available width; activity text is rendered separately through Pi's native working-status divider. A user's per-animation width setting replaces the animation's authored width and bounds. See [Configuration](../configuration.md#width-values).
 
 [`shooting-star.ts`](../../extensions/hush/animations/shooting-star.ts) is a useful full-width, responsive example.
 
@@ -195,7 +195,7 @@ Register that entrypoint in the animation package's `package.json`:
   "type": "module",
   "keywords": ["pi-package"],
   "pi": { "extensions": ["./index.ts"] },
-  "peerDependencies": { "pi-hush": "^0.1.0" }
+  "peerDependencies": { "pi-hush": "^0.2.0" }
 }
 ```
 

@@ -50,10 +50,10 @@ export class HushActivityTracker {
       | undefined;
     if (firstTool !== undefined) {
       const additional = this.#activeTools.size - 1;
-      return `Running ${firstTool}${additional > 0 ? ` +${additional}` : ""}…`;
+      return `Running ${firstTool}${additional > 0 ? ` +${additional}` : ""}`;
     }
-    if (this.#phase === "thinking") return "Thinking…";
-    return this.#phase === "responding" ? "Responding…" : "Working…";
+    if (this.#phase === "thinking") return "Thinking";
+    return this.#phase === "responding" ? "Responding" : "Working";
   }
 
   startRun(): void {

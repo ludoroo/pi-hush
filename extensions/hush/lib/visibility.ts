@@ -39,7 +39,7 @@ export type HushPresentationState = {
   /** When hush is on, whether thinking / CoT blocks are shown. */
   thinking: boolean;
   workingAnimationId: string;
-  /** Whether concise live activity text is configured beside the animation. */
+  /** Whether concise live activity text is configured in Pi's working status. */
   activityTextEnabled: boolean;
   /** Current visible activity text, when Hush and the option are active. */
   activityText?: string;

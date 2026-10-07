@@ -127,7 +127,6 @@ const paths = {
   preference: join(root, "legacy-preference"),
   animation: join(root, "legacy-selected-animation"),
   activity: join(root, "legacy-activity-text"),
-  activityPosition: join(root, "legacy-activity-position"),
   settings: join(root, "legacy-animation-settings.json"),
   prefixes: join(root, "legacy-hidden-input-prefixes.json"),
 };
@@ -139,7 +138,6 @@ const environment = {
   PI_HUSH_PREFERENCE_PATH: process.env.PI_HUSH_PREFERENCE_PATH,
   PI_HUSH_ANIMATION_PATH: process.env.PI_HUSH_ANIMATION_PATH,
   PI_HUSH_ACTIVITY_PATH: process.env.PI_HUSH_ACTIVITY_PATH,
-  PI_HUSH_ACTIVITY_POSITION_PATH: process.env.PI_HUSH_ACTIVITY_POSITION_PATH,
   PI_HUSH_ANIMATION_SETTINGS_PATH:
     process.env.PI_HUSH_ANIMATION_SETTINGS_PATH,
   PI_HUSH_HIDDEN_INPUT_PREFIXES_PATH:
@@ -150,7 +148,6 @@ process.env.PI_HUSH_CONFIG_PATH = paths.config;
 process.env.PI_HUSH_PREFERENCE_PATH = paths.preference;
 process.env.PI_HUSH_ANIMATION_PATH = paths.animation;
 process.env.PI_HUSH_ACTIVITY_PATH = paths.activity;
-process.env.PI_HUSH_ACTIVITY_POSITION_PATH = paths.activityPosition;
 process.env.PI_HUSH_ANIMATION_SETTINGS_PATH = paths.settings;
 process.env.PI_HUSH_HIDDEN_INPUT_PREFIXES_PATH = paths.prefixes;
 
@@ -158,7 +155,6 @@ const obsoleteEnvironmentNames = [
   "PI_HUSH_PREFERENCE_PATH",
   "PI_HUSH_ANIMATION_PATH",
   "PI_HUSH_ACTIVITY_PATH",
-  "PI_HUSH_ACTIVITY_POSITION_PATH",
   "PI_HUSH_ANIMATION_SETTINGS_PATH",
   "PI_HUSH_HIDDEN_INPUT_PREFIXES_PATH",
 ] as const;
@@ -304,7 +300,7 @@ owner = "keep"
 
 [activity]
 enabled = false
-position = "right"
+unrelated = "keep"
 
 [future]
 value = "keep"
@@ -329,7 +325,6 @@ try {
     preference: "off\n",
     animation: "bars\n",
     activity: "off\n",
-    activityPosition: "right\n",
     settings: '{"version":1,"animations":{"wave":{"width":99}}}\n',
     prefixes: '["LEGACY: "]\n',
   };
@@ -341,21 +336,19 @@ try {
   assert.equal(first.presentations.at(-1)?.active, true);
   assert.equal(first.presentations.at(-1)?.workingAnimationId, "flock");
   assert.equal(first.presentations.at(-1)?.activityTextEnabled, true);
-  assert.equal(first.presentations.at(-1)?.activityTextPosition, "left");
   const defaultLines = first.renderedLines(100);
   assert.ok(defaultLines.every((line) => !line.includes("Working")));
   assert.equal(first.workingMessage(), "Working");
   assert.equal(first.renderedWidth(100), 100);
   assert.equal(existsSync(paths.config), false);
   await first.run("width auto");
-  await first.run("activity left");
   await first.run("animation flock");
   assert.equal(existsSync(paths.config), false);
   await first.run("width 28");
   assert.equal(configuredWidth(readConfig(), "flock"), 28);
   assert.equal(readConfig().animation, "flock");
   assert.deepEqual({ ...(readConfig().activity as Record<string, unknown>) },
-    { enabled: true, position: "left" });
+    { enabled: true, placement: "status" });
   await first.close();
   for (const [name, content] of Object.entries(obsoleteContents)) {
     assert.equal(
@@ -374,7 +367,6 @@ try {
   assert.equal(rendering.presentations.at(-1)?.active, true);
   assert.equal(rendering.presentations.at(-1)?.workingAnimationId, "wave");
   assert.equal(rendering.presentations.at(-1)?.activityTextEnabled, false);
-  assert.equal(rendering.presentations.at(-1)?.activityTextPosition, "right");
   assert.equal(rendering.renderedWidth(100), 29); // inset + 28 drawing columns
 
   // Query commands also reload the latest TOML into the live widget.
@@ -393,6 +385,10 @@ try {
   assert.equal(configuredWidth(stored, "fish-loop"), "60%");
   assert.equal(configuredWidth(stored, "unknown-animation"), 9);
   assert.equal(stored.owner, "keep");
+  assert.equal(
+    (stored.activity as Record<string, unknown>).unrelated,
+    "keep",
+  );
   assert.equal((stored.future as Record<string, unknown>).value, "keep");
   let rawStored = readFileSync(paths.config, "utf8");
   assert.match(rawStored, /preserve this top-level comment/);
@@ -516,7 +512,6 @@ try {
     assert.equal(badReload.presentations.at(-1)?.active, true);
     assert.equal(badReload.presentations.at(-1)?.workingAnimationId, "flock");
     assert.equal(badReload.presentations.at(-1)?.activityTextEnabled, true);
-    assert.equal(badReload.presentations.at(-1)?.activityTextPosition, "left");
     assert.equal(badReload.notifications.at(-1)?.level, "warning");
     assert.match(badReload.notifications.at(-1)?.message ?? "", /config|toml|version/i);
 
@@ -528,16 +523,13 @@ try {
     assert.match(rendering.notifications.at(-1)?.message ?? "", /could not|invalid|newer|version/i);
   }
 
-  // Unreadable config writes cannot partially apply activity placement or an
-  // animation selection to the running UI.
+  // Unreadable config writes cannot partially apply an animation selection or
+  // width to the running UI.
   rmSync(paths.config, { force: true });
   mkdirSync(paths.config);
   const beforeFailedCommands = rendering.presentations.at(-1);
-  await rendering.run("activity left");
-  assert.equal(statSync(paths.config).isDirectory(), true);
-  assert.deepEqual(rendering.presentations.at(-1), beforeFailedCommands);
-  assert.equal(rendering.notifications.at(-1)?.level, "warning");
   await rendering.run("animation bars");
+  assert.equal(statSync(paths.config).isDirectory(), true);
   assert.deepEqual(rendering.presentations.at(-1), beforeFailedCommands);
   assert.equal(rendering.notifications.at(-1)?.level, "warning");
   await rendering.run("width 20");

@@ -18,7 +18,6 @@ import {
   HushConfigStore,
   type HushConfigPatch,
 } from "../extensions/hush/lib/config.ts";
-import { DEFAULT_HUSH_ACTIVITY_POSITION } from "../extensions/hush/lib/activity.ts";
 import { DEFAULT_HUSH_ANIMATION_ID } from "../extensions/hush/animations/index.ts";
 import { DEFAULT_HUSH_PREFERENCE } from "../extensions/hush/lib/visibility.ts";
 
@@ -45,7 +44,7 @@ function defaults() {
     preference: { ...DEFAULT_HUSH_PREFERENCE },
     animationId: DEFAULT_HUSH_ANIMATION_ID,
     activityTextEnabled: true,
-    activityTextPosition: DEFAULT_HUSH_ACTIVITY_POSITION,
+    activityPlacement: "status",
     hiddenInputPrefixes: [],
     animationSettings: { version: 1, animations: {} },
   };
@@ -62,7 +61,7 @@ try {
 
     const noChange: HushConfigPatch = {
       animation: "flock",
-      activity: { enabled: true, position: "left" },
+      activity: { enabled: true, placement: "status" },
       width: { animationId: DEFAULT_HUSH_ANIMATION_ID, value: undefined },
     };
     assert.deepEqual(store.update(noChange), defaults());
@@ -80,7 +79,8 @@ animation = "third_party-animation"
 
 [activity]
 enabled = true
-position = "left"
+placement = "widget-right"
+unrelated = "preserve"
 
 [transcript]
 hidden_input_prefixes = ["  exact: ", "\u2063robot:"]
@@ -100,7 +100,7 @@ maxColumns = 48
       preference: { active: false, thinking: true },
       animationId: "third_party-animation",
       activityTextEnabled: true,
-      activityTextPosition: "left",
+      activityPlacement: "widget-right",
       hiddenInputPrefixes: ["  exact: ", "⁣robot:"],
       animationSettings: {
         version: 1,
@@ -121,7 +121,8 @@ maxColumns = 48
     ["[unknown]\nanswer = 42\n", {}],
     ['animation = "wave"\n', { animationId: "wave" }],
     ["[activity]\nenabled = false\n", { activityTextEnabled: false }],
-    ['[activity]\nposition = "right"\n', { activityTextPosition: "right" }],
+    ['[activity]\nplacement = "widget-left"\n', { activityPlacement: "widget-left" }],
+    ['[activity]\nposition = "unrelated-value"\n', {}],
   ] as const) {
     const { paths, store } = createStore();
     write(paths.config, source);
@@ -141,7 +142,8 @@ maxColumns = 48
     "animations = 2026-09-28\n",
     "[animations]\nwave = 2026-09-28\n",
     "[activity]\nenabled = 1\n",
-    '[activity]\nposition = "middle"\n',
+    '[activity]\nplacement = "left"\n',
+    '[activity]\nplacement = "widget-middle"\n',
     '[transcript]\nhidden_input_prefixes = ["ok", " "]\n',
     "[transcript]\nhidden_input_prefixes = [1]\n",
     "[transcript]\nhidden_input_prefixes = [2026-09-28]\n",
@@ -168,7 +170,7 @@ maxColumns = 48
     const { paths, store } = createStore();
     const source = `# personal heading\nversion=1 # compact on purpose\nenabled = true\nthinking = false\nanimation = "wave"\ncustom = 9223372036854775807 # huge unknown integer\n\n[activity] # keep me\nenabled=false\nposition="right"\n\n[transcript]\nhidden_input_prefixes=["exact: "]\n\n[animations.wave]\nwidth = 28 # drawing size\nnote = "untouched"\n\n[plugin]\nvalue = { nested = true }\n`;
     write(paths.config, source);
-    store.update({ activity: { position: "left" } });
+    store.update({ activity: { enabled: true, placement: "widget-left" } });
     const edited = readFileSync(paths.config, "utf8");
     assert.match(edited, /# personal heading/);
     assert.match(edited, /version=1 # compact on purpose/);
@@ -176,7 +178,8 @@ maxColumns = 48
     assert.match(edited, /width = 28 # drawing size/);
     assert.match(edited, /note = "untouched"/);
     assert.match(edited, /value = \{ nested = true \}/);
-    assert.match(edited, /position\s*=\s*"left"/);
+    assert.match(edited, /position\s*=\s*"right"/);
+    assert.match(edited, /placement\s*=\s*"widget-left"/);
     assert.equal(statSync(paths.config).mode & 0o777, 0o600);
 
     // A second session's edit is observed before this instance writes.

@@ -6,12 +6,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { BUILT_IN_HUSH_ANIMATIONS } from "../extensions/hush/animations/index.ts";
 import {
-  HUSH_LOADER_INDENT,
   normalizeHushWidgetFrame,
   renderHushAnimation,
   resolveHushAnimationHeight,
   resolveHushAnimationWidth,
+  resolveHushWidgetLayout,
 } from "../extensions/hush/lib/animation.ts";
+import {
+  stripTerminalSequences,
+  truncateToWidth,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PREVIEW_PATH = resolve(ROOT, "docs/preview.html");
@@ -44,11 +49,17 @@ function expectedFrames(time, config) {
       (text) => text,
     ]),
   );
-  const available = Math.max(0, config.columns - HUSH_LOADER_INDENT);
+  const activityEnabled = config.activity !== "off";
+  const activityPlacement = config.activity === "off" ? "status" : config.activity;
+  const layout = resolveHushWidgetLayout(
+    config.columns,
+    activityEnabled,
+    activityPlacement,
+  );
   return BUILT_IN_HUSH_ANIMATIONS.map((animation) => {
     const width = resolveHushAnimationWidth(
       config.widthMode === "full" ? { ratio: 1 } : animation.width,
-      available,
+      layout.animationAvailableWidth,
     );
     const height = resolveHushAnimationHeight(animation, width, config.rows * 8);
     const frame = Math.floor(time / animation.intervalMs);
@@ -61,9 +72,25 @@ function expectedFrames(time, config) {
             { frame, elapsedMs, width, height, viewportWidth: config.columns },
             palette,
           );
+    const activityLabel = stripTerminalSequences(truncateToWidth(
+      config.activityLabel,
+      layout.activityWidth,
+      "",
+    ));
+    const activityCell = activityLabel +
+      " ".repeat(Math.max(0, layout.activityWidth - visibleWidth(activityLabel)));
+    const blankActivityCell = " ".repeat(layout.activityWidth);
+    const gap = " ".repeat(layout.gapWidth);
     const lines = normalizeHushWidgetFrame(rows, width, height).map(
-      (animationLine) =>
-        (" ".repeat(HUSH_LOADER_INDENT) + animationLine).padEnd(config.columns, " "),
+      (animationLine, row) => {
+        const label = row === 0 ? activityCell : blankActivityCell;
+        const body = config.activity === "widget-left"
+          ? label + gap + animationLine
+          : config.activity === "widget-right"
+            ? animationLine + gap + label
+            : animationLine;
+        return (" ".repeat(layout.indent) + body).padEnd(config.columns, " ");
+      },
     );
     return { id: animation.id, width, height, frame, elapsedMs, rows: lines, error: null };
   });
@@ -127,14 +154,14 @@ try {
   assert.equal(await page.locator(".card").count(), 7);
   assert.equal(await page.locator("h1").textContent(), "Hush animation gallery");
   const initial = await page.evaluate(() => window.hushGallery.inspect());
-  assert.equal(initial.config.activity, "left", "preview should enable Hush activity by default");
-  assert.equal(initial.config.activityLabel, "Working…", "preview should use Hush's default busy label");
+  assert.equal(initial.config.activity, "status", "preview should use status activity by default");
+  assert.equal(initial.config.activityLabel, "Working", "preview should use Hush's default busy label");
   let comparisons = 0;
   for (const columns of [2, 10, 18, 19, 20, 24, 26, 54, 96]) {
     for (const rows of [1, 2, 3]) {
-      for (const activity of ["off", "left"]) {
+      for (const activity of ["off", "status", "widget-left", "widget-right"]) {
         for (const widthMode of ["auto", "full"]) {
-          const config = { columns, rows, activity, widthMode, activityLabel: "Working…" };
+          const config = { columns, rows, activity, widthMode, activityLabel: "Working" };
           for (const time of [0, 1234, 6100, 13_200]) {
             const actual = await page.evaluate(
               ({ nextConfig, nextTime }) => {
@@ -166,18 +193,18 @@ try {
   await page.locator("#columns-number").pressSequentially("100");
   assert.equal((await page.evaluate(() => window.hushGallery.inspect())).config.columns, 100);
   await page.locator("#columns-number").fill("32");
-  await page.locator("#activity").selectOption("left");
-  await page.locator("#activity-label").selectOption("Running read +2…");
+  await page.locator("#activity").selectOption("widget-right");
+  await page.locator("#activity-label").selectOption("Running read +2");
   const relabelled = await page.evaluate(() => window.hushGallery.inspect());
   assert.equal(relabelled.elapsedMs, 6100);
-  assert.equal(relabelled.config.activityLabel, "Running read +2…");
+  assert.equal(relabelled.config.activityLabel, "Running read +2");
   assert.deepEqual(
     relabelled.frames,
     expectedFrames(6100, {
       columns: 32,
       rows: 3,
-      activity: "left",
-      activityLabel: "Running read +2…",
+      activity: "widget-right",
+      activityLabel: "Running read +2",
       widthMode: "auto",
     }),
   );
@@ -228,7 +255,7 @@ try {
       await fitPage.goto(pathToFileURL(PREVIEW_PATH).href);
       await fitPage.evaluate(() => {
         window.hushGallery.setTime(6100);
-        window.hushGallery.setLayout({ columns: 54, activity: "left", rows: 3 });
+        window.hushGallery.setLayout({ columns: 54, activity: "widget-left", rows: 3 });
       });
       const fits = () => [...document.querySelectorAll(".theatre")].every((stage) => {
         const drawing = stage.querySelector(".drawing").getBoundingClientRect();

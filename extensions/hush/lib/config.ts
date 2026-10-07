@@ -11,9 +11,9 @@ import {
 import { dirname } from "node:path";
 import { parse, stringify } from "smol-toml";
 import {
-  DEFAULT_HUSH_ACTIVITY_POSITION,
+  DEFAULT_HUSH_ACTIVITY_PLACEMENT,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
-  type HushActivityPosition,
+  type HushActivityPlacement,
 } from "./activity.ts";
 import {
   createHushAnimationSettings,
@@ -39,7 +39,7 @@ export type HushConfig = {
   preference: HushPreference;
   animationId: string;
   activityTextEnabled: boolean;
-  activityTextPosition: HushActivityPosition;
+  activityPlacement: HushActivityPlacement;
   hiddenInputPrefixes: readonly string[];
   animationSettings: HushAnimationSettings;
 };
@@ -50,7 +50,7 @@ export type HushConfigPatch = {
   animation?: string;
   activity?: {
     enabled?: boolean;
-    position?: "left" | "right";
+    placement?: HushActivityPlacement;
   };
   /** An undefined value authors `auto`; it does not delete unrelated settings. */
   width?: {
@@ -98,7 +98,7 @@ function defaultConfig(): HushConfig {
     preference: { ...DEFAULT_HUSH_PREFERENCE },
     animationId: DEFAULT_HUSH_ANIMATION_ID,
     activityTextEnabled: DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
-    activityTextPosition: DEFAULT_HUSH_ACTIVITY_POSITION,
+    activityPlacement: DEFAULT_HUSH_ACTIVITY_PLACEMENT,
     hiddenInputPrefixes: [],
     animationSettings: createHushAnimationSettings(),
   };
@@ -231,20 +231,20 @@ function parseCurrentConfig(source: string): HushConfig {
     "enabled",
     DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
   );
-  const positionValue = activityTable.position;
+  const placementValue = activityTable.placement;
   if (
-    positionValue !== undefined &&
-    positionValue !== "left" &&
-    positionValue !== "right"
+    placementValue !== undefined &&
+    placementValue !== "status" &&
+    placementValue !== "widget-left" &&
+    placementValue !== "widget-right"
   ) {
     throw new Error(
-      "Malformed Hush config: activity.position must be left or right",
+      "Malformed Hush config: activity.placement must be status, widget-left, or widget-right",
     );
   }
-  const activityTextPosition =
-    (positionValue as HushActivityPosition | undefined) ??
-    DEFAULT_HUSH_ACTIVITY_POSITION;
-
+  const activityPlacement =
+    (placementValue as HushActivityPlacement | undefined) ??
+    DEFAULT_HUSH_ACTIVITY_PLACEMENT;
   const transcript = document.transcript;
   if (transcript !== undefined && !isRecord(transcript)) {
     throw new Error("Malformed Hush config: transcript must be a table");
@@ -290,7 +290,7 @@ function parseCurrentConfig(source: string): HushConfig {
     preference: { active: enabled, thinking },
     animationId,
     activityTextEnabled,
-    activityTextPosition,
+    activityPlacement,
     hiddenInputPrefixes,
     animationSettings: {
       version: 1,
@@ -320,7 +320,7 @@ function configDocument(config: HushConfig): Record<string, unknown> {
     animation: config.animationId,
     activity: {
       enabled: config.activityTextEnabled,
-      position: config.activityTextPosition,
+      placement: config.activityPlacement,
     },
     transcript: { hidden_input_prefixes: [...config.hiddenInputPrefixes] },
     animations: config.animationSettings.animations,
@@ -403,19 +403,22 @@ export class HushConfigStore {
       });
     }
     if (
-      patch.activity?.position !== undefined &&
-      patch.activity.position !== config.activityTextPosition
+      patch.activity?.placement !== undefined &&
+      patch.activity.placement !== config.activityPlacement
     ) {
       if (
-        patch.activity.position !== "left" &&
-        patch.activity.position !== "right"
+        patch.activity.placement !== "status" &&
+        patch.activity.placement !== "widget-left" &&
+        patch.activity.placement !== "widget-right"
       ) {
-        throw new TypeError("Hush activity position must be left or right");
+        throw new TypeError(
+          "Hush activity placement must be status, widget-left, or widget-right",
+        );
       }
-      config = { ...config, activityTextPosition: patch.activity.position };
+      config = { ...config, activityPlacement: patch.activity.placement };
       updates.push({
-        path: ["activity", "position"],
-        value: patch.activity.position,
+        path: ["activity", "placement"],
+        value: patch.activity.placement,
       });
     }
     if (patch.width !== undefined) {

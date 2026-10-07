@@ -1,7 +1,7 @@
 {
   "name": "pi-hush",
-  "version": "0.2.0",
-  "description": "Hush Pi's tool chatter and optional thinking while keeping the conversation and a compact, theme-aware activity animation visible.",
+  "version": "0.3.0",
+  "description": "Hide Pi's tool chatter behind a compact activity animation.",
   "author": "Lucas Barcelos",
   "contributors": [
     "Jesse Zhang"

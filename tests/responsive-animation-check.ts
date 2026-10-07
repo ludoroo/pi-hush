@@ -188,7 +188,6 @@ try {
   const originalTimer = [...timers.keys()][0];
   const leftSettings = {
     enabled: true, animationId: "responsive", activityTextEnabled: true,
-    activityTextPosition: "left" as const,
   };
   host.apply(ui, leftSettings);
   const leftRows = widget.render(65).map(plain);
@@ -230,20 +229,6 @@ try {
   assert.deepEqual(widget.render(65), advanced);
   assert.deepEqual([...timers.keys()], [originalTimer]);
 
-  // The compatibility position setting no longer changes animation layout.
-  for (const position of ["left", "right"] as const) {
-    host.apply(ui, { ...leftSettings, activityTextPosition: position });
-    for (const label of ["Working", "Running read +2", "Running subagent", undefined]) {
-      host.setActivityText(label);
-      const rows = widget.render(54).map(plain);
-      assert.equal(context().width, 53);
-      assert.equal(context().elapsedMs, 350);
-      assert.equal(getWidget(), widget);
-      assert.deepEqual([...timers.keys()], [originalTimer]);
-      assert.ok(rows.every((row) => !label || !row.includes(label)));
-      assert.equal(workingMessage, label);
-    }
-  }
   host.apply(ui, leftSettings);
   host.setActivityText("Thinking");
   widget.render(50);
@@ -292,6 +277,75 @@ try {
   const beforeToggle = widget.render(65);
   assert.ok(beforeToggle.every((line) => !line.includes("Running read")));
   assert.equal(workingMessage, "Running read");
+
+  // Widget placements reserve a stable, responsive activity column. Activity
+  // updates repaint the existing widget without remounting it or changing its
+  // animation canvas, row count, or timer.
+  host.apply(ui, {
+    enabled: true,
+    animationId: "responsive",
+    activityTextEnabled: true,
+    activityPlacement: "widget-left",
+  });
+  assert.equal(nativeVisible, false);
+  assert.equal(workingMessage, undefined);
+  const widgetLeft = widget.render(65).map(plain);
+  assert.equal(getWidget(), widget);
+  assert.equal(timers.size, 1);
+  assert.deepEqual(widgetLeft.map(visibleWidth), [65, 65, 65]);
+  assert.equal(widgetLeft[0].indexOf("Running read"), 1);
+  assert.equal(widgetLeft[0].indexOf("z"), 26);
+  assert.equal(widgetLeft.slice(1).some((line) => line.includes("Running read")), false);
+  assert.equal(context().width, 39);
+  const requestsBeforeWidgetActivity = renderRequests;
+  host.setActivityText("x\ny\x1b[31m");
+  assert.equal(renderRequests, requestsBeforeWidgetActivity + 1);
+  const sanitizedLeft = widget.render(65).map(plain);
+  assert.equal(sanitizedLeft[0].includes("x y"), true);
+  assert.equal(sanitizedLeft[0].indexOf("z"), 26);
+  assert.equal(context().width, 39);
+  host.setActivityText("Running " + "very-long-name ".repeat(10));
+  const truncatedLeft = widget.render(65).map(plain);
+  assert.equal(truncatedLeft[0].slice(1, 25), "Running very-long-name …");
+  assert.equal(truncatedLeft[0].includes("very-long-name very-long-name"), false);
+  assert.equal(truncatedLeft[0].indexOf("z"), 26);
+
+  host.apply(ui, {
+    enabled: true,
+    animationId: "responsive",
+    activityTextEnabled: true,
+    activityPlacement: "widget-right",
+  });
+  host.setActivityText("Thinking");
+  const widgetRight = widget.render(65).map(plain);
+  assert.deepEqual(widgetRight.map(visibleWidth), [65, 65, 65]);
+  assert.equal(widgetRight[0].indexOf("z"), 1);
+  assert.equal(widgetRight[0].indexOf("Thinking"), 41);
+  assert.equal(context().width, 39);
+  const tooNarrowForActivity = widget.render(17).map(plain);
+  assert.ok(tooNarrowForActivity.every((line) => !line.includes("Thinking")));
+  assert.equal(context().width, 16);
+  const minimumActivityWidth = widget.render(18).map(plain);
+  assert.ok(minimumActivityWidth.some((line) => line.includes("Thinking")));
+  assert.equal(context().width, 8);
+  for (const width of [0, 1, 2, 3, 12, 17, 18, 24, 40, 65, 120]) {
+    const rows = widget.render(width);
+    assert.ok(rows.length <= HUSH_ANIMATION_ROW_BUDGET);
+    assert.ok(rows.every((line) => visibleWidth(line) <= width));
+    assert.ok(rows.every((line) => !/[\r\n]/u.test(line)));
+  }
+
+  host.apply(ui, {
+    enabled: true,
+    animationId: "responsive",
+    activityTextEnabled: true,
+    activityPlacement: "status",
+  });
+  assert.equal(nativeVisible, true);
+  assert.equal(workingMessage, "Thinking");
+  widget.render(65);
+  assert.equal(context().width, 64);
+
   host.apply(ui, { enabled: true, animationId: "responsive", activityTextEnabled: false });
   widget.render(65);
   assert.equal(nativeVisible, false);
@@ -347,7 +401,6 @@ try {
   // Explicit sizing bypasses both default bounds, but not the terminal budget.
   const cappedSettings = {
     enabled: true, animationId: "capped", activityTextEnabled: true,
-    activityTextPosition: "left" as const,
   };
   host.apply(ui, { ...cappedSettings, widthOverride: 37 });
   const cappedWidget = getWidget();

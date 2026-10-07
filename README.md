@@ -17,15 +17,20 @@ Hush starts with **flock**, with activity text shown in Pi's native working-stat
 
 **Built-ins:** `flock` · `wave` · `bars` · `jumping-dots` · `shooting-star` · `fish-loop` · `cat-ball`.
 
-### Native activity status—or none
+### Activity in the status or widget
 
 ```text
-/hush activity           # toggle Hush's custom status label
+/hush activity                 # toggle Hush's activity label
+/hush activity status          # use Pi's working-status divider (default)
+/hush activity widget-left     # put text left of the animation
+/hush activity widget-right    # put text right of the animation
 ```
 
-Labels follow what Pi reports: **Working**, **Thinking**, **Responding**, or **Running read**. Parallel tools get a compact summary such as **Running read +2**. Thinking is shown only when the provider reports a thinking block; otherwise Hush says Working. The label uses Pi's native working-status divider while Hush's animation remains above the editor. When activity text is off, Pi's status row is hidden while Hush's animation runs.
+Labels follow what Pi reports: **Working**, **Thinking**, **Responding**, or **Running read**. Parallel tools get a compact summary such as **Running read +2**. Thinking is shown only when the provider reports a thinking block; otherwise Hush says Working.
 
-The existing `/hush activity left` and `/hush activity right` settings are retained for configuration compatibility, but position does not affect text in Pi's divider.
+`status` uses Pi's native working-status divider while the widget remains animation-only. Widget placements hide Pi's working row and put sanitized, ellipsized text beside the animation in a stable responsive column, hiding the label when the terminal is too narrow, so activity changes do not move the editor or animation. When activity text is off, Pi's status row is hidden while Hush's animation runs.
+
+![Hush activity in Pi's status, on either side of the widget, and off.](https://raw.githubusercontent.com/ludoroo/pi-hush/main/docs/assets/activity-layouts.gif)
 
 Want to try different widths and colours? Open `docs/preview.html` from the installed package, or save the [gallery HTML](https://github.com/ludoroo/pi-hush/blob/main/docs/preview.html) and open it in your browser. It runs offline using Hush's actual renderers. Terminal fonts and your Pi theme may look a little different from the previews.
 
@@ -43,11 +48,13 @@ Restart Pi or run `/reload`. Hush is on immediately—no configuration file requ
 | --- | --- |
 | `/hush on` · `/hush off` | Use Hush or restore Pi's ordinary transcript |
 | `/hush thinking` | Toggle visible thinking while keeping tool chatter hidden |
+| `/hush activity` | Toggle live activity text |
+| `/hush activity status` · `widget-left` · `widget-right` | Choose the activity surface |
 | `/hush animation` | Choose an animation |
 | `/hush width 28` · `/hush width 60%` | Set the selected animation's drawing width |
 | `/hush width auto` | Return that animation to its natural sizing |
 
-Pi offers argument completion after `/hush `. Animation and thinking commands turn Hush on; `/hush activity` also turns Hush on when toggling text. Width and compatibility activity-position commands leave the on/off state alone.
+Pi offers argument completion after `/hush `. Animation and thinking commands turn Hush on; `/hush activity` also turns Hush on when toggling text. Width and activity-placement commands leave the on/off state alone.
 
 Widths are drawing space, not zoom. A percentage uses the animation widget's available width. Width preferences are saved per animation; the activity enabled setting applies to all of them.
 
@@ -60,7 +67,7 @@ animation = "flock"
 
 [activity]
 enabled = true
-position = "left"
+placement = "status"
 ```
 
 Those are the defaults. **The file and every field are optional**, including `version`; you don't need to add it. Hush is on and thinking is hidden unless you choose otherwise.

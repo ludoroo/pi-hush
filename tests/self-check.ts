@@ -59,7 +59,7 @@ import {
   resolveHushAnimationWidth,
 } from "../extensions/hush/lib/animation.ts";
 import {
-  DEFAULT_HUSH_ACTIVITY_POSITION,
+  DEFAULT_HUSH_ACTIVITY_PLACEMENT,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
 } from "../extensions/hush/lib/activity.ts";
 import {
@@ -116,7 +116,7 @@ assert.equal(
 // --- configuration defaults ---
 assert.deepEqual(DEFAULT_HUSH_PREFERENCE, { active: true, thinking: false });
 assert.equal(DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED, true);
-assert.equal(DEFAULT_HUSH_ACTIVITY_POSITION, "left");
+assert.equal(DEFAULT_HUSH_ACTIVITY_PLACEMENT, "status");
 
 // --- command argument completion ---
 assert.deepEqual(
@@ -150,23 +150,19 @@ assert.deepEqual(
 );
 assert.deepEqual(
   getHushArgumentCompletions("activity ")?.map((item) => item.value),
-  ["activity left", "activity right"],
+  ["activity status", "activity widget-left", "activity widget-right"],
 );
 assert.deepEqual(
-  getHushArgumentCompletions("activity l")?.map((item) => item.value),
-  ["activity left"],
+  getHushArgumentCompletions("activity widget-r")?.map((item) => item.value),
+  ["activity widget-right"],
 );
-assert.deepEqual(
-  getHushArgumentCompletions("activity  R")?.map((item) => item.value),
-  ["activity right"],
-);
-assert.equal(getHushArgumentCompletions("activity left "), null);
-assert.equal(getHushArgumentCompletions("activity position "), null);
+assert.equal(getHushArgumentCompletions("activity left"), null);
+assert.equal(getHushArgumentCompletions("activity extra"), null);
 assert.equal(getHushArgumentCompletions("unknown"), null);
 
-// --- activity-position command and unified TOML persistence integration ---
+// --- command and unified TOML persistence integration ---
 const commandPreferenceRoot = mkdtempSync(
-  join(tmpdir(), "pi-hush-activity-position-"),
+  join(tmpdir(), "pi-hush-command-"),
 );
 const commandAgentDir = join(commandPreferenceRoot, "agent");
 const commandHushDir = join(commandAgentDir, "hush");
@@ -184,6 +180,7 @@ owner = "keep"
 [activity]
 enabled = false
 position = "right"
+future = "keep"
 
 [unknown]
 answer = 42
@@ -287,10 +284,21 @@ try {
   await firstHarness.start();
   assert.equal(firstHarness.presentations.at(-1)?.active, false);
   assert.equal(firstHarness.presentations.at(-1)?.activityTextEnabled, false);
+  assert.equal(firstHarness.presentations.at(-1)?.activityPlacement, "status");
+
+  // Placement changes only its own setting, even while Hush and activity are off.
+  await firstHarness.command("activity widget-left");
+  assert.equal(readCommandConfig().enabled, false);
   assert.equal(
-    firstHarness.presentations.at(-1)?.activityTextPosition,
-    "right",
+    (readCommandConfig().activity as Record<string, unknown>).enabled,
+    false,
   );
+  assert.equal(
+    (readCommandConfig().activity as Record<string, unknown>).placement,
+    "widget-left",
+  );
+  assert.equal(firstHarness.presentations.at(-1)?.active, false);
+  assert.equal(firstHarness.presentations.at(-1)?.activityPlacement, "widget-left");
 
   // Each presentation command persists to TOML and survives session reload.
   await firstHarness.command("on");
@@ -307,57 +315,48 @@ try {
   await firstHarness.start();
   assert.equal(firstHarness.presentations.at(-1)?.active, false);
 
-  await firstHarness.command("activity left");
-  const leftConfig = readCommandConfig() as {
+  await firstHarness.command("activity");
+  const activityConfig = readCommandConfig() as {
     enabled: boolean;
     owner: string;
-    activity: { enabled: boolean; position: string };
+    activity: { enabled: boolean; future: string };
     unknown: { answer: number };
   };
-  assert.equal(leftConfig.activity.position, "left");
-  assert.equal(leftConfig.activity.enabled, false);
-  assert.equal(leftConfig.enabled, false);
-  assert.equal(leftConfig.owner, "keep");
-  assert.equal(leftConfig.unknown.answer, 42);
+  assert.equal(activityConfig.activity.enabled, true);
+  assert.equal(activityConfig.activity.future, "keep");
+  assert.equal(activityConfig.enabled, true);
+  assert.equal(activityConfig.owner, "keep");
+  assert.equal(activityConfig.unknown.answer, 42);
   assert.match(readFileSync(commandConfigPath, "utf8"), /retain this command-test comment/);
-  assert.equal(firstHarness.presentations.at(-1)?.active, false);
-  assert.equal(
-    firstHarness.presentations.at(-1)?.activityTextPosition,
-    "left",
-  );
+
+  await firstHarness.command("activity widget-right");
+  const placedActivityConfig = readCommandConfig() as {
+    activity: { enabled: boolean; placement: string; position: string; future: string };
+  };
+  assert.equal(placedActivityConfig.activity.placement, "widget-right");
+  assert.equal(placedActivityConfig.activity.position, "right");
+  assert.equal(placedActivityConfig.activity.enabled, true);
+  assert.equal(firstHarness.presentations.at(-1)?.activityPlacement, "widget-right");
+  assert.equal(firstHarness.presentations.at(-1)?.active, true);
+
+  const beforeInvalid = readFileSync(commandConfigPath, "utf8");
+  for (const command of ["activity extra", "activity left", "activity right"]) {
+    await firstHarness.command(command);
+    assert.equal(readFileSync(commandConfigPath, "utf8"), beforeInvalid);
+  }
   assert.match(
     firstHarness.notifications.at(-1)?.message ?? "",
-    /activity text is off.*\/hush activity/,
+    /\/hush activity \[status\|widget-left\|widget-right\] \|/,
   );
-
-  for (const invalid of ["activity middle", "activity position right"]) {
-    const beforeInvalid = readFileSync(commandConfigPath, "utf8");
-    await firstHarness.command(invalid);
-    assert.equal(readFileSync(commandConfigPath, "utf8"), beforeInvalid);
-    assert.equal(firstHarness.presentations.at(-1)?.active, false);
-    assert.match(
-      firstHarness.notifications.at(-1)?.message ?? "",
-      /activity \[left\|right\]/,
-    );
-  }
 
   const reloadedHarness = createHushCommandHarness();
   await reloadedHarness.start();
-  assert.equal(
-    reloadedHarness.presentations.at(-1)?.activityTextPosition,
-    "left",
-  );
-  await reloadedHarness.command("activity  RIGHT");
-  assert.equal(
-    (readCommandConfig().activity as Record<string, unknown>).position,
-    "right",
-  );
-  assert.equal(reloadedHarness.presentations.at(-1)?.activityTextPosition, "right");
-  assert.equal(reloadedHarness.presentations.at(-1)?.activityTextEnabled, false);
-  assert.equal(reloadedHarness.presentations.at(-1)?.active, false);
+  assert.equal(reloadedHarness.presentations.at(-1)?.activityTextEnabled, true);
+  assert.equal(reloadedHarness.presentations.at(-1)?.activityPlacement, "widget-right");
+  assert.equal(reloadedHarness.presentations.at(-1)?.active, true);
 
   // Strict mutations reject malformed TOML without changing either live state.
-  const malformedConfig = "enabled = false\n[activity\nposition = 'left'\n";
+  const malformedConfig = "enabled = false\n[activity\nenabled = true\n";
   writeFileSync(commandConfigPath, malformedConfig);
   const stateBeforeFailure = reloadedHarness.presentations.at(-1);
   await reloadedHarness.command("activity");
@@ -371,10 +370,6 @@ try {
     assert.deepEqual(reloadedHarness.presentations.at(-1), stateBeforeFailure);
     assert.equal(reloadedHarness.notifications.at(-1)?.level, "warning");
   }
-  await reloadedHarness.command("activity left");
-  assert.equal(readFileSync(commandConfigPath, "utf8"), malformedConfig);
-  assert.deepEqual(reloadedHarness.presentations.at(-1), stateBeforeFailure);
-  assert.equal(reloadedHarness.notifications.at(-1)?.level, "warning");
 } finally {
   for (const [name, value] of Object.entries(preferenceEnvironment)) {
     if (value === undefined) delete process.env[name];
@@ -422,6 +417,7 @@ const presentationState = {
   thinking: false,
   workingAnimationId: "wave",
   activityTextEnabled: true,
+  activityPlacement: "widget-left" as const,
   activityText: "Thinking",
   stockExportRendering: false,
 };
@@ -445,29 +441,6 @@ assert.equal(
   true,
 );
 assert.equal(publishedPresentationStates.length, 2);
-// Older publishers omitted the field; undefined and the default right are equal.
-const backwardCompatiblePublisher = new HushPresentationPublisher();
-assert.equal(
-  backwardCompatiblePublisher.publish(
-    { ...presentationState, activityTextPosition: undefined },
-    () => {},
-  ),
-  true,
-);
-assert.equal(
-  backwardCompatiblePublisher.publish(
-    { ...presentationState, activityTextPosition: "right" },
-    () => {},
-  ),
-  false,
-);
-assert.equal(
-  backwardCompatiblePublisher.publish(
-    { ...presentationState, activityTextPosition: "left" },
-    () => {},
-  ),
-  true,
-);
 presentationPublisher.reset();
 assert.equal(
   presentationPublisher.publish(
@@ -851,12 +824,10 @@ assert.equal(activityWaveWidget.render(40)[0]?.includes("Running read"), false);
 assert.equal(hostWorkingMessage, "Running read");
 assert.equal(workingVisible, true);
 
-// Activity position remains compatible configuration but does not affect layout.
 animationHost.apply(hostUi, {
   enabled: true,
   animationId: "shooting-star",
   activityTextEnabled: true,
-  activityTextPosition: "right",
 });
 const shootingStarWidget = (():
   | (Component & { dispose?(): void })

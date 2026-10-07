@@ -52,6 +52,9 @@ summary span{color:var(--ink);margin-left:6px}
 .theatre{background:linear-gradient(180deg,color-mix(in srgb,var(--stage) 94%,var(--accent) 6%),var(--stage));border-top:1px solid var(--border);border-bottom:1px solid var(--border);min-height:130px;display:flex;align-items:center;padding:20px 14px;overflow-x:auto}
 .drawing{flex:none;white-space:pre;font:var(--font-size)/1.32 Menlo,"SFMono-Regular",Consolas,"Liberation Mono",monospace;margin:0;direction:ltr;unicode-bidi:isolate;font-variant-ligatures:none}
 .line{display:block;height:1.32em;line-height:1.32em}
+.native-status{display:flex;align-items:center;gap:8px;padding:3px 14px;color:var(--muted);font:12px Menlo,"SFMono-Regular",monospace;white-space:nowrap}
+.native-status::before,.native-status::after{content:"";height:1px;background:var(--border);flex:1}
+.native-status[hidden]{display:none}
 .cell{display:inline-block;width:1ch;text-align:center;vertical-align:top}
 .accent{color:var(--accent)}.secondary{color:var(--secondary)}.tertiary{color:var(--tertiary)}.highlight{color:var(--highlight)}.muted{color:var(--muted)}
 .card-foot{padding:10px 18px 13px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
@@ -70,7 +73,7 @@ body.asset-capture header,body.asset-capture .controls,body.asset-capture .statu
 body.capture-animations .gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 body.capture-animations .card-head{padding:9px 12px}
 body.capture-animations .card h2{font-size:14px;margin:0}
-body.capture-animations .description,body.capture-animations .expand,body.capture-animations .card-foot{display:none}
+body.capture-animations .description,body.capture-animations .expand,body.capture-animations .card-foot,body.capture-animations .native-status{display:none}
 body.capture-animations .theatre{min-height:72px;padding:12px 8px;border-bottom:0}
 body.capture-animations .drawing{font-size:13px}
 body.capture-activity #gallery{display:none}
@@ -94,11 +97,11 @@ body.capture-activity .drawing{font-size:18px}
 <label class="option">Terminal columns<div><input id="columns" type="range" min="2" max="120" value="54" aria-label="Terminal columns"><input id="columns-number" type="number" min="2" max="120" value="54" aria-label="Terminal columns number"></div></label>
 <label class="option">Height budget<select id="rows"><option value="1">1 row · short pane</option><option value="2">Up to 2 rows</option><option value="3" selected>Up to 3 rows</option></select></label>
 <label class="option">Animation width<select id="width-mode"><option value="auto">Author defaults</option><option value="full">100% available space</option></select></label>
-<label class="option">Activity text<select id="activity"><option value="off">Off · Pi default</option><option value="left" selected>On · Pi divider</option></select></label>
+<label class="option">Activity placement<select id="activity"><option value="off">Off</option><option value="status" selected>Pi working status</option><option value="widget-left">Widget left</option><option value="widget-right">Widget right</option></select></label>
 <label class="option">Activity label<select id="activity-label"><option selected>Working</option><option>Thinking</option><option>Running read +2</option><option>Responding</option></select></label>
 <label class="option">Preview palette<select id="theme"><option value="rose">Rosé Pine</option><option value="night">Midnight</option><option value="paper">Paper</option></select></label>
 <label class="option">Maximum preview text size<select id="font-size"><option value="14">14 px</option><option value="16" selected>16 px</option><option value="18">18 px</option><option value="22">22 px</option></select></label>
-</div><p class="hint">Layout changes preserve playback time. Width controls terminal drawing space, not zoom. Activity text uses Pi's separate editor divider, so it does not consume animation width. The web preview scales down to fit each card without changing the terminal layout.</p></details>
+</div><p class="hint">Layout changes preserve playback time. Width controls terminal drawing space, not zoom. Widget activity reserves a stable responsive column; status activity uses Pi's separate divider. The web preview scales down to fit each card without changing the terminal layout.</p></details>
 </section>
 <p class="status"><strong id="motion-note">One shared clock.</strong> Pause and scrub to inspect a pose; expand a card for a closer look. <kbd>Space</kbd> toggles playback.</p>
 <section class="gallery" id="gallery" aria-label="Built-in animations"></section>

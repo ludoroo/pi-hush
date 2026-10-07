@@ -1,6 +1,9 @@
-export type HushActivityPosition = "left" | "right";
+export type HushActivityPlacement =
+  | "status"
+  | "widget-left"
+  | "widget-right";
 
-export const DEFAULT_HUSH_ACTIVITY_POSITION: HushActivityPosition = "left";
+export const DEFAULT_HUSH_ACTIVITY_PLACEMENT: HushActivityPlacement = "status";
 export const DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED = true;
 export const HUSH_ACTIVITY_TOOL_NAME_MAX_LENGTH = 80;
 

@@ -5,17 +5,18 @@ import type {
   HushWorkingAnimation,
 } from "../../extensions/hush/lib/animation.ts";
 import {
-  HUSH_LOADER_INDENT,
   resolveHushAnimationHeight,
   resolveHushAnimationWidth,
+  resolveHushWidgetLayout,
 } from "../../extensions/hush/lib/animation.ts";
+import type { HushActivityPlacement } from "../../extensions/hush/lib/activity.ts";
 
 type Cell = { text: string; color: string };
 type LayoutConfig = {
   columns: number;
   rows: number;
   widthMode: string;
-  activity: string;
+  activity: "off" | HushActivityPlacement;
   activityLabel: string;
 };
 
@@ -47,7 +48,7 @@ const config: LayoutConfig = {
   columns: 54,
   rows: 3,
   widthMode: "auto",
-  activity: "left",
+  activity: "status",
   activityLabel: "Working",
 };
 const roles = new Set(["accent", "secondary", "tertiary", "highlight", "muted"]);
@@ -82,9 +83,24 @@ function normalizeRow(row: HushAnimationRow | undefined, width: number): Cell[] 
   return [...cells, ...spaces(width - cells.length)];
 }
 
-/** Compose the animation-only widget; Pi owns the separate activity divider. */
-function composeRow(cells: Cell[]): Cell[] {
-  const line = [...spaces(HUSH_LOADER_INDENT), ...cells].slice(0, config.columns);
+/** Compose the exact Hush widget; status placement remains Pi-owned. */
+function composeRow(
+  cells: Cell[],
+  row: number,
+  layout: ReturnType<typeof resolveHushWidgetLayout>,
+): Cell[] {
+  const activity = [
+    ...plainCells(config.activityLabel, "muted").slice(0, layout.activityWidth),
+  ];
+  activity.push(...spaces(layout.activityWidth - activity.length));
+  const activityCell = row === 0 ? activity : spaces(layout.activityWidth);
+  const gap = spaces(layout.gapWidth);
+  const body = config.activity === "widget-left"
+    ? [...activityCell, ...gap, ...cells]
+    : config.activity === "widget-right"
+      ? [...cells, ...gap, ...activityCell]
+      : cells;
+  const line = [...spaces(layout.indent), ...body].slice(0, config.columns);
   return [...line, ...spaces(config.columns - line.length)];
 }
 
@@ -144,6 +160,9 @@ const records = BUILT_IN_HUSH_ANIMATIONS.map((animation: HushWorkingAnimation) =
   drawing.setAttribute("role", "img");
   drawing.setAttribute("aria-label", `${animation.label} animation preview`);
   theatre.append(drawing);
+  const nativeStatus = document.createElement("div");
+  nativeStatus.className = "native-status";
+  nativeStatus.hidden = true;
 
   const foot = document.createElement("div");
   foot.className = "card-foot";
@@ -153,7 +172,7 @@ const records = BUILT_IN_HUSH_ANIMATIONS.map((animation: HushWorkingAnimation) =
   command.className = "command";
   command.textContent = `/hush animation ${animation.id}`;
   foot.append(meta, command);
-  card.append(head, theatre, foot);
+  card.append(head, theatre, nativeStatus, foot);
   controls.gallery.append(card);
 
   const record = {
@@ -161,6 +180,7 @@ const records = BUILT_IN_HUSH_ANIMATIONS.map((animation: HushWorkingAnimation) =
     card,
     drawing,
     theatre,
+    nativeStatus,
     meta,
     expand,
     lastKey: "",
@@ -217,19 +237,24 @@ function syncExpanded(): void {
 }
 
 function render(force = false): void {
-  const available = Math.max(
-    0,
-    config.columns - HUSH_LOADER_INDENT,
+  const activityEnabled = config.activity !== "off";
+  const activityPlacement = config.activity === "off" ? "status" : config.activity;
+  const layout = resolveHushWidgetLayout(
+    config.columns,
+    activityEnabled,
+    activityPlacement,
   );
   for (const record of records) {
     const { animation } = record;
+    record.nativeStatus.hidden = config.activity !== "status";
+    record.nativeStatus.textContent = config.activityLabel;
     const frame = Math.floor(elapsedMs / animation.intervalMs);
     const key = `${frame}/${layoutVersion}`;
     if (!force && key === record.lastKey) continue;
     record.lastKey = key;
     const width = resolveHushAnimationWidth(
       config.widthMode === "full" ? { ratio: 1 } : animation.width,
-      available,
+      layout.animationAvailableWidth,
     );
     const height = resolveHushAnimationHeight(animation, width, config.rows * 8);
     const sampledMs = frame * animation.intervalMs;
@@ -250,7 +275,7 @@ function render(force = false): void {
       const drawing = Array.from({ length: height }, (_, row) =>
         normalizeRow(rawRows[row], width),
       );
-      const lines = drawing.map((cells) => composeRow(cells));
+      const lines = drawing.map((cells, row) => composeRow(cells, row, layout));
       drawLines(record.drawing, lines);
       record.meta.textContent =
         `${width} × ${height} canvas` +
@@ -333,11 +358,14 @@ function updateLayout(): void {
     : config.columns;
   controls.columns.value = controls.columnNumber.value = String(config.columns);
   config.rows = Number(controls.rows.value);
-  config.activity = controls.activity.value;
+  config.activity = controls.activity.value as LayoutConfig["activity"];
   config.activityLabel = controls.activityLabel.value;
   config.widthMode = controls.widthMode.value;
+  const activitySummary = config.activity === "off"
+    ? "activity off"
+    : `${config.activity}: ${config.activityLabel}`;
   controls.summary.textContent =
-    `· ${config.columns} columns · up to ${config.rows} rows · native activity ${config.activity === "off" ? "off" : config.activityLabel}`;
+    `· ${config.columns} columns · up to ${config.rows} rows · ${activitySummary}`;
   layoutVersion += 1;
   render(true);
 }

@@ -26,8 +26,11 @@ const payload = {
   defineHushWorkingAnimation: api.defineHushWorkingAnimation.toString(),
   resolveHushAnimationWidth: api.resolveHushAnimationWidth.toString(),
   resolveHushAnimationHeight: api.resolveHushAnimationHeight.toString(),
+  resolveHushWidgetLayout: api.resolveHushWidgetLayout.toString(),
   HUSH_ANIMATION_ROW_BUDGET: api.HUSH_ANIMATION_ROW_BUDGET,
   HUSH_LOADER_INDENT: api.HUSH_LOADER_INDENT,
+  HUSH_ACTIVITY_WIDGET_MAX_WIDTH: api.HUSH_ACTIVITY_WIDGET_MAX_WIDTH,
+  HUSH_ACTIVITY_WIDGET_MIN_WIDTH: api.HUSH_ACTIVITY_WIDGET_MIN_WIDTH,
   checks: {
     identity: api.defineHushWorkingAnimation(identity) === identity,
     fixedWidth: api.resolveHushAnimationWidth(12, 8),
@@ -45,6 +48,7 @@ const payload = {
       11,
       32,
     ),
+    widgetLayout: api.resolveHushWidgetLayout(65, true, "widget-right"),
   },
 };
 process.stdout.write(JSON.stringify(payload));
@@ -86,12 +90,18 @@ async function generateApiShim() {
     "defineHushWorkingAnimation",
     "resolveHushAnimationWidth",
     "resolveHushAnimationHeight",
+    "resolveHushWidgetLayout",
   ]) {
     if (typeof api[name] !== "string" || !api[name].startsWith("function ")) {
       fail(`actual animation API did not expose ${name} as a function`);
     }
   }
-  if (!Number.isInteger(api.HUSH_ANIMATION_ROW_BUDGET) || !Number.isInteger(api.HUSH_LOADER_INDENT)) {
+  if (
+    !Number.isInteger(api.HUSH_ANIMATION_ROW_BUDGET) ||
+    !Number.isInteger(api.HUSH_LOADER_INDENT) ||
+    !Number.isInteger(api.HUSH_ACTIVITY_WIDGET_MAX_WIDTH) ||
+    !Number.isInteger(api.HUSH_ACTIVITY_WIDGET_MIN_WIDTH)
+  ) {
     fail("actual animation API constants were not integers");
   }
 
@@ -99,9 +109,12 @@ async function generateApiShim() {
     "// Generated at build time from the real Hush animation API.",
     `export const HUSH_ANIMATION_ROW_BUDGET = ${JSON.stringify(api.HUSH_ANIMATION_ROW_BUDGET)};`,
     `export const HUSH_LOADER_INDENT = ${JSON.stringify(api.HUSH_LOADER_INDENT)};`,
+    `export const HUSH_ACTIVITY_WIDGET_MAX_WIDTH = ${JSON.stringify(api.HUSH_ACTIVITY_WIDGET_MAX_WIDTH)};`,
+    `export const HUSH_ACTIVITY_WIDGET_MIN_WIDTH = ${JSON.stringify(api.HUSH_ACTIVITY_WIDGET_MIN_WIDTH)};`,
     `export ${api.defineHushWorkingAnimation}`,
     `export ${api.resolveHushAnimationWidth}`,
     `export ${api.resolveHushAnimationHeight}`,
+    `export ${api.resolveHushWidgetLayout}`,
     "export class HushAnimationRegistry {",
     "  #animations = new Map();",
     "  constructor(animations = []) { for (const animation of animations) this.register(animation); }",

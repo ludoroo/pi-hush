@@ -82,9 +82,9 @@ export default {
 
 | Field | Meaning |
 | --- | --- |
-| `width` | Allocated drawing columns after proportional sizing, bounds, inset, and activity reservation. |
+| `width` | Allocated drawing columns after proportional sizing, bounds, inset, and any widget-activity reservation. |
 | `height` | Allocated drawing rows after animation and terminal limits. |
-| `viewportWidth` | Full widget width before the one-column inset and activity reservation. |
+| `viewportWidth` | Full widget width before the one-column inset and any widget-activity reservation. |
 | `elapsedMs` | Active mounted playback time, sampled on timer ticks. |
 | `frame` | `floor(elapsedMs / intervalMs)`. |
 
@@ -195,7 +195,7 @@ Register that entrypoint in the animation package's `package.json`:
   "type": "module",
   "keywords": ["pi-package"],
   "pi": { "extensions": ["./index.ts"] },
-  "peerDependencies": { "pi-hush": "^0.2.0" }
+  "peerDependencies": { "pi-hush": "^0.3.0" }
 }
 ```
 

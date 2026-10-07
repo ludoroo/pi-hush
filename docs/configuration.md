@@ -29,7 +29,7 @@ animation = "flock"
 
 [activity]
 enabled = true
-position = "left"
+placement = "status"
 
 [transcript]
 hidden_input_prefixes = []
@@ -53,8 +53,8 @@ Available settings:
 | `enabled` | boolean | `true` | Whether Hush presentation is active. |
 | `thinking` | boolean | `false` | Whether thinking/CoT is shown while Hush is active. |
 | `animation` | string | `"flock"` | Selected animation ID. IDs start with a lowercase letter or digit and then contain lowercase letters, digits, `_`, or `-`. |
-| `activity.enabled` | boolean | `true` | Show concise live activity text in Pi's native working-status divider. |
-| `activity.position` | `"left"` or `"right"` | `"left"` | Retained for compatibility; it does not affect text rendered in Pi's divider. |
+| `activity.enabled` | boolean | `true` | Show concise live activity text. |
+| `activity.placement` | `"status"`, `"widget-left"`, or `"widget-right"` | `"status"` | Render activity in Pi's working status or beside the widget animation. |
 | `transcript.hidden_input_prefixes` | array of nonblank strings | `[]` | Literal prefixes whose text-only user rows Hush may hide. See [Message prefixes](advanced/message-prefixes.md). |
 | `animations.<id>.width` | width value | authored animation default | Override one animation's drawing width. |
 
@@ -62,7 +62,21 @@ Unknown animation IDs and unrelated values are retained when a command edits a k
 
 ## Activity layout
 
-When enabled, Hush sends its live label to Pi's native working message. Pi renders that status in the editor's top divider, while Hush's widget remains animation-only and can use the full available animation width. Disabling activity text hides Pi's entire working-status row while Hush's animation runs; turning Hush off restores Pi's default working presentation. Custom editor extensions that do not support Pi's embedded working status may render the enabled activity message as a separate status row instead.
+`activity.placement = "status"` sends the live label to Pi's native working message. Pi renders it in the editor's top divider while Hush's widget remains animation-only and can use the full available animation width.
+
+`"widget-left"` and `"widget-right"` hide Pi's working row and render the label on that side of Hush's animation. Widget text is stripped of terminal/control sequences, restricted to one line, and truncated with an ellipsis in a responsive activity column of at most 24 cells. When fewer than eight cells are available, Hush gives the full line to the animation instead of showing an unreadable fragment. The column's size depends only on terminal width—not label content—so transitions such as **Working** to **Running read +2** preserve widget geometry, animation playback, and editor position.
+
+Disabling activity text hides Pi's entire working-status row while Hush's animation runs; turning Hush off restores Pi's default working presentation. Custom editor extensions that do not support Pi's embedded working status may render `status` as a separate status row instead.
+
+Use the same values from the command line:
+
+```text
+/hush activity status
+/hush activity widget-left
+/hush activity widget-right
+```
+
+A placement command changes only placement; it does not enable activity text or Hush. The former `activity.position` key and `/hush activity left|right` commands are not part of this schema. If an old `position` key is present, Hush treats it as an unrelated unknown value and preserves it when editing known settings.
 
 ## Width values
 
@@ -89,7 +103,7 @@ The rules are:
 - Fixed widths are positive integer columns.
 - Percentages are greater than `0%` and at most `100%`.
 - In a bounded width, `ratio` is greater than `0` and at most `1`; `minColumns` and `maxColumns`, when present, are positive integers, with the minimum no greater than the maximum.
-- Available animation space is what remains after Hush's one-column inset and the activity-text reservation. The host finally clamps the result to the space that actually remains.
+- Available animation space is what remains after Hush's one-column inset and, for widget activity, its stable activity column and one-cell gap. The host finally clamps the result to the space that actually remains.
 - An override replaces the animation's authored preferred width and bounds. `"auto"` removes that override and follows the authored width again.
 
 The equivalent commands apply only to the currently selected animation:
@@ -112,7 +126,7 @@ Bare `/hush width` reports the selected animation's current override or authored
 - Reading a missing file, loading Hush, and commands that make no effective change do not create a file.
 - A valid configuration symlink remains a symlink: Hush atomically updates its resolved target. A dangling symlink is treated as an unreadable configuration, not as a missing file.
 
-Some commands intentionally affect only their own setting. For example, changing activity position does not turn activity text on, and changing width does not change Hush, thinking, or activity state.
+Some commands intentionally affect only their own setting. For example, changing activity placement does not turn activity text on, and changing width does not change Hush, thinking, or activity state.
 
 ## Invalid files and failed saves
 

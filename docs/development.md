@@ -34,7 +34,7 @@ docs/
   advanced/                      # custom animations and message prefixes
   preview/                       # editable gallery HTML and TypeScript
   preview.html                   # generated, self-contained offline gallery
-  assets/                        # generated README GIFs
+  assets/                        # generated README GIFs and banner
 scripts/
   preview-*.mjs                  # gallery build, capture, and parity checks
 ```
@@ -119,7 +119,7 @@ PI_HUSH_CONFIG_PATH="$scratch/config.toml" \
   pi -e ./extensions/hush/index.ts
 ```
 
-Inside Pi, exercise `/hush on`, `/hush off`, `/hush animation`, `/hush width`, `/hush activity`, export/share behavior, resize handling, and `/reload`. Project-local animation discovery also requires the project to be trusted.
+Inside Pi, exercise `/hush on`, `/hush off`, `/hush animation`, `/hush width`, `/hush activity`, all three activity placements, export/share behavior, resize handling, and `/reload`. Project-local animation discovery also requires the project to be trusted.
 
 ## Pi runtime integration
 
@@ -131,7 +131,7 @@ Hush is presentation-only, but Pi does not currently expose one global transcrip
 
 Each adapter installs independently. If a future Pi release removes a seam, Hush logs a diagnostic and skips only that adapter; commands and unaffected presentation continue working. There is no numeric version gate. The current integration is verified against Pi **0.85.1 and 0.87.0**.
 
-The tool-row patch is necessary because Pi tool ownership is first-wins: wrapping `registerTool()` alone would miss tools owned by another extension. Working animations use `setWidget()` for the animation-only widget and Pi's native working message for activity labels in the editor divider. Hush suppresses Pi's spinner while the animation is active; Escape remains Pi's interrupt mechanism. When Hush is disabled or no animation can run, Pi's default working presentation is restored.
+The tool-row patch is necessary because Pi tool ownership is first-wins: wrapping `registerTool()` alone would miss tools owned by another extension. Working animations use `setWidget()`. Status placement sends activity labels to Pi's native working message; widget placements reserve a stable column beside the animation and hide Pi's working row. Hush suppresses Pi's spinner while the animation is active; Escape remains Pi's interrupt mechanism. When Hush is disabled or no animation can run, Pi's default working presentation is restored.
 
 `/export` and `/share` briefly restore stock rendering so serialized output remains complete. Hush never removes tool execution, results, model context, or persisted messages.
 

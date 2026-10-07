@@ -1,3 +1,5 @@
+import type { HushActivityPlacement } from "./activity.ts";
+
 /** Audited transcript classes Hush may control when Pi exposes a renderer. */
 export const HUSH_TRANSCRIPT_CLASSES = [
   "genuine-user-prompt",
@@ -39,12 +41,12 @@ export type HushPresentationState = {
   /** When hush is on, whether thinking / CoT blocks are shown. */
   thinking: boolean;
   workingAnimationId: string;
-  /** Whether concise live activity text is configured in Pi's working status. */
+  /** Whether concise live activity text is configured. */
   activityTextEnabled: boolean;
+  /** Surface selected for activity text. */
+  activityPlacement: HushActivityPlacement;
   /** Current visible activity text, when Hush and the option are active. */
   activityText?: string;
-  /** Side of the animation used for activity text. Omitted means right. */
-  activityTextPosition?: import("./activity.ts").HushActivityPosition;
   stockExportRendering: boolean;
 };
 
@@ -57,9 +59,8 @@ function sameHushPresentationState(
     left.thinking === right.thinking &&
     left.workingAnimationId === right.workingAnimationId &&
     left.activityTextEnabled === right.activityTextEnabled &&
+    left.activityPlacement === right.activityPlacement &&
     left.activityText === right.activityText &&
-    (left.activityTextPosition ?? "right") ===
-      (right.activityTextPosition ?? "right") &&
     left.stockExportRendering === right.stockExportRendering
   );
 }

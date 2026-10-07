@@ -123,16 +123,16 @@ try {
     }
   }
 
-  await page.setViewportSize({ width: 720, height: 560 });
+  await page.setViewportSize({ width: 720, height: 680 });
   await page.evaluate(() => {
     document.body.className = "asset-capture capture-activity";
     const comparison = document.createElement("section");
     comparison.className = "activity-comparison";
     comparison.id = "activity-comparison";
-    comparison.setAttribute("aria-label", "Activity layout comparison");
+    comparison.setAttribute("aria-label", "Activity placement comparison");
     document.querySelector("main")?.append(comparison);
   });
-  const activityModes = ["left", "right", "off"];
+  const activityModes = ["status", "widget-left", "widget-right", "off"];
   const activityFrameCount = 80;
   for (let frame = 0; frame < activityFrameCount; frame += 1) {
     await page.evaluate(
@@ -146,7 +146,7 @@ try {
             columns: 54,
             rows: 3,
             activity,
-            activityLabel: "Working…",
+            activityLabel: "Running read +2",
             widthMode: "auto",
           });
           const rendered = document.querySelector('.card[data-animation="flock"]');
@@ -180,8 +180,8 @@ try {
     window.hushGallery.setLayout({
       columns: 54,
       rows: 3,
-      activity: "left",
-      activityLabel: "Working…",
+      activity: "status",
+      activityLabel: "Working",
       widthMode: "auto",
     });
   });

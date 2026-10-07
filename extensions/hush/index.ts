@@ -24,7 +24,7 @@
  *   /hush on                  Hush on, thinking hidden
  *   /hush thinking            Hush on, toggle thinking / CoT
  *   /hush activity            Hush on, toggle live activity text
- *   /hush activity left|right Place activity text around the animation
+ *   /hush activity <placement> Place text in status or either widget side
  *   /hush animation <name>    Select a working animation
  *   /hush width 28|60%|auto   Set this animation's drawing width
  *   /hush off                 Hush off
@@ -51,10 +51,10 @@ import { installHushOperationalUserLayout } from "./lib/operational-user-layout.
 import { isOperationalInput } from "./lib/operational-input.ts";
 import { installHushToolExecutionLayout } from "./lib/tool-execution-layout.ts";
 import {
-  DEFAULT_HUSH_ACTIVITY_POSITION,
+  DEFAULT_HUSH_ACTIVITY_PLACEMENT,
   DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED,
   HushActivityTracker,
-  type HushActivityPosition,
+  type HushActivityPlacement,
 } from "./lib/activity.ts";
 import {
   HUSH_ANIMATION_DISCOVERY_EVENT,
@@ -142,15 +142,19 @@ export function getHushArgumentCompletions(
   argumentPrefix: string,
 ): AutocompleteItem[] | null {
   const prefix = argumentPrefix.trimStart().toLowerCase();
-  const activityPositionMatch = prefix.match(/^activity\s+([^\s]*)$/);
-  if (activityPositionMatch) {
-    const positionPrefix = activityPositionMatch[1];
-    const matches = (["left", "right"] as const)
-      .filter((position) => position.startsWith(positionPrefix))
-      .map((position) => ({
-        value: `activity ${position}`,
-        label: position,
-        description: `Place activity text to the ${position} of the animation`,
+  const activityPlacementMatch = prefix.match(/^activity\s+([^\s]*)$/);
+  if (activityPlacementMatch) {
+    const placementPrefix = activityPlacementMatch[1];
+    const matches = (
+      ["status", "widget-left", "widget-right"] as const
+    )
+      .filter((placement) => placement.startsWith(placementPrefix))
+      .map((placement) => ({
+        value: `activity ${placement}`,
+        label: placement,
+        description: placement === "status"
+          ? "Show activity in Pi's working status"
+          : `Show activity on the widget's ${placement === "widget-left" ? "left" : "right"}`,
       }));
     return matches.length > 0 ? matches : null;
   }
@@ -203,7 +207,7 @@ export default function (pi: ExtensionAPI) {
   let exportRendering = false;
   let animationId = DEFAULT_HUSH_ANIMATION_ID;
   let activityTextEnabled = DEFAULT_HUSH_ACTIVITY_TEXT_ENABLED;
-  let activityTextPosition = DEFAULT_HUSH_ACTIVITY_POSITION;
+  let activityPlacement = DEFAULT_HUSH_ACTIVITY_PLACEMENT;
   let animationSettings = createHushAnimationSettings();
   let widgetsEnabled = false;
   let removeTerminalInputHandler: (() => void) | undefined;
@@ -214,7 +218,7 @@ export default function (pi: ExtensionAPI) {
       animationId,
       widgetsEnabled,
       activityTextEnabled,
-      activityTextPosition,
+      activityPlacement,
       widthOverride: getHushAnimationWidthOverride(
         animationSettings,
         animationId,
@@ -356,7 +360,7 @@ export default function (pi: ExtensionAPI) {
       thinking: preference.thinking,
       workingAnimationId: animationId,
       activityTextEnabled,
-      activityTextPosition,
+      activityPlacement,
       ...(activityText === undefined ? {} : { activityText }),
       stockExportRendering: exportRendering,
     } satisfies HushPresentationState;
@@ -420,7 +424,7 @@ export default function (pi: ExtensionAPI) {
     exportRendering = false;
     widgetsEnabled = ctx.mode === "tui";
     activityTextEnabled = config.activityTextEnabled;
-    activityTextPosition = config.activityTextPosition;
+    activityPlacement = config.activityPlacement;
     animationSettings = config.animationSettings;
     activity.reset();
     if (!ctx.isIdle()) activity.startRun();
@@ -531,7 +535,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("hush", {
     description:
-      "Hush transcript and working animation: /hush on, thinking, activity (legacy left|right), animation <name>, width <columns|percent|auto>, or off.",
+      "Hush transcript and working animation: /hush on, thinking, activity [status|widget-left|widget-right], animation <name>, width <columns|percent|auto>, or off.",
     getArgumentCompletions: getHushArgumentCompletions,
     handler: async (args, ctx) => {
       const argument = args.trim().toLowerCase();
@@ -575,15 +579,17 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const activityPositionMatch = argument.match(/^activity\s+(left|right)$/);
-      if (activityPositionMatch) {
-        const position = activityPositionMatch[1] as HushActivityPosition;
+      const activityPlacementMatch = argument.match(
+        /^activity\s+(status|widget-left|widget-right)$/,
+      );
+      if (activityPlacementMatch) {
+        const placement = activityPlacementMatch[1] as HushActivityPlacement;
         if (!saveConfig(
-          { activity: { position } },
+          { activity: { placement } },
           ctx,
-          "Could not save Hush activity position.",
+          "Could not save Hush activity placement.",
         )) return;
-        activityTextPosition = position;
+        activityPlacement = placement;
         applyAnimationPresentation(ctx.ui);
         publishPresentationState();
         if (ctx.hasUI) {
@@ -591,7 +597,7 @@ export default function (pi: ExtensionAPI) {
             ? ""
             : "; activity text is off — use /hush activity to enable it";
           ctx.ui.notify(
-            `Hush activity position saved for compatibility: ${activityTextPosition}${enableHint}`,
+            `Hush activity placement: ${activityPlacement}${enableHint}`,
             "info",
           );
         }
@@ -710,7 +716,7 @@ export default function (pi: ExtensionAPI) {
 
       if (ctx.hasUI) {
         ctx.ui.notify(
-          "Usage: /hush on | /hush thinking | /hush activity [left|right] | /hush animation <name> | /hush width <columns|percent|auto> | /hush off",
+          "Usage: /hush on | /hush thinking | /hush activity [status|widget-left|widget-right] | /hush animation <name> | /hush width <columns|percent|auto> | /hush off",
           "warning",
         );
       }
